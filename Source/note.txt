@@ -1,0 +1,8 @@
+1. Đóng tiến trình chiếm cổng
+Mở Command Prompt (cmd) và nhập lệnh sau để kiểm tra chương trình nào đang sử dụng cổng 22236:
+    netstat -ano | findstr :22236
+Nếu có kết quả như:
+    TCP    0.0.0.0:22236        0.0.0.0:0              LISTENING       12345
+    →PID (Process ID) là 12345, đây là tiến trình đang chiếm cổng.
+Dừng tiến trình bằng lệnh:
+    taskkill /PID 12345 /F
