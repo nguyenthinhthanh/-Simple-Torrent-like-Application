@@ -52,7 +52,7 @@ Mô tả dự án
    ```
 3. **Chạy Peer Node:**
    ```bash
-   python update later
+   python peer_sta.py --server-ip 123.456 --server-port 12345
    ```
 ## Hướng dẫn sử dụng
 - Khởi động Tracker Server trước để các peer có thể kết nối và nhận danh sách các nguồn tải.
