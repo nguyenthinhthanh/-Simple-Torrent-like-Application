@@ -57,8 +57,8 @@ Mô tả dự án
 ## Hướng dẫn sử dụng
 - Khởi động Tracker Server trước để các peer có thể kết nối và nhận danh sách các nguồn tải.
 - Chạy ứng dụng peer để kết nối đến tracker và bắt đầu tải file từ các nguồn có sẵn.
-- Theo dõi tiến trình tải lên và tải xuống thông qua giao diện điều khiển (command-line hoặc GUI nếu có).
-- Tính năng mở rộng
+- Theo dõi tiến trình tải lên và tải xuống thông qua giao diện điều khiển (command-line hoặc GUI).
+## Tính năng mở rộng
 - Hỗ trợ tải nhiều torrent cùng lúc: Quản lý đồng thời nhiều tiến trình tải và chia sẻ file.
 - Giao diện người dùng (GUI): Phát triển giao diện đồ họa hiển thị thông tin kết nối, tiến trình tải và thống kê chia sẻ file.
 - Thuật toán tối ưu hóa lựa chọn peer: Cải tiến thuật toán chọn peer để tăng tốc độ tải và tối ưu băng thông.
