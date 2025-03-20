@@ -1,10 +1,46 @@
+import os
 import sys
 import time
+import json
 import mmap
 import socket
 import argparse
 import threading
+import hashlib
+import bencodepy
+import urllib.parse
+from hashlib import sha1
 from threading import Thread
+
+
+base_dir = "data"
+
+# Kiểm tra thư mục "data" tồn tại
+if os.path.exists(base_dir):
+    for root, dirs, files in os.walk(base_dir):
+        for file in files:
+            file_path = os.path.join(root, file)
+            os.remove(file_path)  # Xóa từng file
+
+if not os.path.exists("data"):
+    os.makedirs("data")
+if not os.path.exists("data/files_info"):
+    os.makedirs("data/files_info")
+if not os.path.exists("data/pieces_data"):
+    os.makedirs("data/pieces_data")
+if not os.path.exists("data/export_files"):
+    os.makedirs("data/export_files")
+if not os.path.exists("data/torrent_file"):
+    os.makedirs("data/torrent_file")
+
+
+# ===============================================================================================
+# ================ GL0BAL PARAMETER ==============================================================
+# ===============================================================================================
+
+# Configure the size of each piece (512KB)
+PIECE_SIZE = 512 * 1024
+TRACKER_ADDRESS = None
 
 # ===============================================================================================
 # ================ SERVER FUNCTION ==============================================================
@@ -86,21 +122,21 @@ def connect_server(threadnum, host, port):
     [t.join() for t in threads]
 
 def thread_client(id, serverip, serverport, peerip, peerport):
-    event.wait()                                                    # Wait signal for server thread
+    #event.wait()                                                    # Wait signal for server thread
 
     print('Client ID {:d} connecting to {}:{:d}'.format(id, serverip, serverport))
 
     # client_socket = socket.socket()
     # client_socket.connect((serverip, serverport))
 
-    # print('Client thread ID {:d} connect success to {}:{:d}'.format(id, serverip, serverport))
+    # print('Client ID {:d} connect success to {}:{:d}'.format(id, serverip, serverport))
 
     while True:
         print_gui()
         command = input("")
 
         if command == "1":
-            function1()
+            upload_file_to_local();
         elif command == "2":
             function2()
         elif command == "3":
@@ -148,10 +184,132 @@ def thread_agent(time_fetching, filepath):
 
     exit()
 
+# ===============================================================================================
+# ============== HELPER FUNCTION ================================================================
+# ===============================================================================================
+
+def set_tracker_address(hostip, port):
+    global TRACKER_ADDRESS 
+    TRACKER_ADDRESS = "http://{}:{}".format(hostip, port)
+
+# Lưu file info để giao tiếp peer to peer, tên file là hash code của info (info_hash)
+def save_file_info(file_info):
+    file = open(f"data/files_info/{file_info['info_hash']}.json", "w")
+    file.write(json.dumps(file_info))
+    file.close()
+
+def save_piece_data(piece_name, piece_data):
+    fs = open(f"data/pieces_data/{piece_name}", "wb")
+    fs.write(piece_data)
+    fs.close()
+
+def print_file_info(file_info):
+    print(
+        f"info_hash({file_info['info_hash']}) - {file_info['size']} bytes - {file_info['piece_count']} piece(s) - {file_info['name']}"
+    )
 
 # ===============================================================================================
-# ==============PEER TO TRACKER FUNCTION=========================================================
+# ============== HELPER FUNCTION FOR FUNCTION 1 =================================================
 # ===============================================================================================
+
+def calculate_piece_hashes(byte_array, piece_length):
+    """Tính toán SHA-1 hash của các mảnh (piece) của file và nối lại thành một chuỗi nhị phân."""
+    piece_hashes = b"".join(hashlib.sha1(byte_array[i:i+piece_length]).digest() 
+                             for i in range(0, len(byte_array), piece_length))
+    return piece_hashes  # Trả về chuỗi nhị phân chứa các SHA-1 hash 20 byte nối nhau
+
+# ===============================================================================================
+# ============== PEER TO TRACKER FUNCTION =======================================================
+# ===============================================================================================
+
+# Function 1: Add files from the computer to local storage, prepare to register with tracker
+def upload_file_to_local():
+    file_path = input("\nEnter the file path want to share : ")
+    if not os.path.exists(file_path):
+        print("The file does not exist")
+        return
+    if not os.path.isfile(file_path):
+        print("This path is not a file")
+        return
+
+    # Đọc lấy dữ liệu file cần thêm vào mạng
+    file = open(file_path, "rb")
+    byte_array = file.read()
+    file.close()
+
+    # Tính toán các thuộc tính đại diện cho dữ liệu của File
+    name_file = os.path.basename(file_path).split("/")[-1]
+    name_without_ext, _ = os.path.splitext(name_file)
+    size_file = len(byte_array)
+    piece_count = (size_file // PIECE_SIZE) + 1
+
+    ############### Create torrent file ###############
+    output_dir = "data/torrent_file"
+    os.makedirs(output_dir, exist_ok=True)
+    output_file = os.path.join(output_dir, f"{name_without_ext}_torrent.torrent")
+
+    # Pieces hash for torrent file
+    pieces = calculate_piece_hashes(byte_array, PIECE_SIZE)
+    #pieces = b"abcd1234efgh5678abcd1234efgh5678"
+
+    # info field in file torrent
+    info = {
+            "piece length": PIECE_SIZE,                     # Example piece length (512KB)
+            "pieces": pieces,                               # Placeholder piece hashes (20-byte SHA-1 hashes)
+            "name": name_file.encode(),                     # File name
+            "length": size_file                             # File size 
+        }
+    
+    torrent_data = {
+        "announce": TRACKER_ADDRESS.encode(),               # Tracker URL
+        "info": info
+    }
+
+    # Bencode the data
+    encoded_data = bencodepy.encode(torrent_data)
+    
+    # Write the encoded data to a .torrent file
+    with open(output_file, "wb") as f:
+        f.write(encoded_data)
+    
+    print(f"Torrent file '{output_file}' created successfully!")
+
+    ############### Store info file ###############
+    
+    # Bencode dictionary info
+    encoded_info = bencodepy.encode(info)
+
+    # Tính SHA-1 hash của phần info đã bencode cho magnet link
+    info_hash_magnet = hashlib.sha1(encoded_info).hexdigest()  # Convert to hex
+
+    # Tính SHA-1 hash của phần info đã bencode
+    info_hash_torrent = hashlib.sha1(encoded_info).digest()
+    # URL encode info_hash cho torrent file
+    info_hash_encoded = urllib.parse.quote(info_hash_torrent)
+
+    # Lưu info của file để sau này giao tiếp peer to peer
+    file_info = {
+        "info_hash": info_hash_magnet,
+        "name": name_file,
+        "size": size_file,
+        "piece_count": piece_count,
+    }
+    save_file_info(file_info)
+
+    # Cắt thành các piece và lưu dữ liệu từng piece
+    for i in range(piece_count):
+        begin = i * PIECE_SIZE
+        end = (i + 1) * PIECE_SIZE
+        if end > size_file:
+            end = size_file
+        piece_data = byte_array[begin:end]
+        piece_name = f"{info_hash_magnet}_{i}"
+        save_piece_data(piece_name, piece_data)
+
+    print("Add file successfully!")
+    print_file_info(file_info)
+    print("\n")
+    return
 
 def function1():
     print("Function 1 do")
@@ -207,19 +365,21 @@ if __name__ == "__main__":
     serverport = args.server_port
     #agentpath = args.agent_path
 
+    set_tracker_address(serverip,serverport)
+
     peerid = 1                                          #random peer id
     peerip = get_host_default_interface_ip()
     peerport = 33357
 
     tserver = Thread(target=thread_server, args=(peerip,peerport))
-    tclient = Thread(target=thread_client, args=(peerid, serverip, serverport, peerip, peerport))
+    tclient = Thread(target=thread_client, args=(peerid,serverip,serverport,peerip,peerport))
     #tagent = Thread(target=thread_agent, args=(2, agentpath))
 
-    tserver.start()
+    #tserver.start()
     tclient.start()
 
     tclient.join()
     #tagent.start()
 
     #Never completed
-    tserver.join()
+    #tserver.join()
