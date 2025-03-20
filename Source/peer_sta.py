@@ -88,7 +88,7 @@ def connect_server(threadnum, host, port):
 def thread_client(id, serverip, serverport, peerip, peerport):
     event.wait()                                                    # Wait signal for server thread
 
-    print('Client thread ID {:d} connecting to {}:{:d}'.format(id, serverip, serverport))
+    print('Client ID {:d} connecting to {}:{:d}'.format(id, serverip, serverport))
 
     # client_socket = socket.socket()
     # client_socket.connect((serverip, serverport))
@@ -207,11 +207,12 @@ if __name__ == "__main__":
     serverport = args.server_port
     #agentpath = args.agent_path
 
+    peerid = 1                                          #random peer id
     peerip = get_host_default_interface_ip()
     peerport = 33357
 
     tserver = Thread(target=thread_server, args=(peerip,peerport))
-    tclient = Thread(target=thread_client, args=(1, serverip, serverport, peerip, peerport))
+    tclient = Thread(target=thread_client, args=(peerid, serverip, serverport, peerip, peerport))
     #tagent = Thread(target=thread_agent, args=(2, agentpath))
 
     tserver.start()
