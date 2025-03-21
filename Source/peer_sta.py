@@ -4,6 +4,9 @@ import time
 import json
 import mmap
 import socket
+import struct
+import random
+import string
 import argparse
 import threading
 import hashlib
@@ -41,6 +44,21 @@ if not os.path.exists("data/torrent_file"):
 # Configure the size of each piece (512KB)
 PIECE_SIZE = 512 * 1024
 TRACKER_ADDRESS = None
+
+# --- CÁC HẰNG SỐ & THAM SỐ CỦA Peer wire protocol https://wiki.theory.org/BitTorrentSpecification#Peer_wire_protocol_.28TCP.29 ---
+PSTR = "BitTorrent protocol"         # Protocol identifier
+PSTRLEN = len(PSTR)                    # Độ dài của pstr
+RESERVED = b'\x00' * 8                 # 8 byte dành riêng, mặc định là 0
+HANDSHAKE_LEN = 49 + PSTRLEN           # Tổng độ dài handshake
+TIMEOUT = 5                            # Timeout kết nối (giây)
+
+# Các message ID theo protocol:
+MSG_CHOKE = 0
+MSG_UNCHOKE = 1
+MSG_INTERESTED = 2
+MSG_NOT_INTERESTED = 3
+MSG_REQUEST = 6
+MSG_PIECE = 7
 
 # ===============================================================================================
 # ================ SERVER FUNCTION ==============================================================
@@ -124,7 +142,7 @@ def connect_server(threadnum, host, port):
 def thread_client(id, serverip, serverport, peerip, peerport):
     #event.wait()                                                    # Wait signal for server thread
 
-    print('Client ID {:d} connecting to {}:{:d}'.format(id, serverip, serverport))
+    print('Client ID {} connecting to {}:{:d}'.format(id, serverip, serverport))
 
     # client_socket = socket.socket()
     # client_socket.connect((serverip, serverport))
@@ -187,6 +205,12 @@ def thread_agent(time_fetching, filepath):
 # ===============================================================================================
 # ============== HELPER FUNCTION ================================================================
 # ===============================================================================================
+
+def generate_peer_id():
+    prefix = b"-PY0001-"  # Định danh client (PY = Python client, 0001 = phiên bản 1.0.0)
+    random_part = ''.join(random.choices(string.digits + string.ascii_letters, k=12))  # 12 ký tự ngẫu nhiên
+    peer_id = prefix + random_part.encode()
+    return peer_id
 
 def set_tracker_address(hostip, port):
     global TRACKER_ADDRESS 
@@ -311,9 +335,136 @@ def upload_file_to_local():
     print("\n")
     return
 
-def function1():
-    print("Function 1 do")
-    return
+# ===============================================================================================
+# ============== HELPER FUNCTION FOR FUNCTION 5 =======================================================
+# ===============================================================================================
+
+# --- PHẦN PEER THREAD PEER: YÊU CẦU TẢI PIECE CỦA PEER CLIENT ---
+def download_piece_from_peer_client(peer_ip, peer_port, info_hash, client_peer_id,
+                               piece_index, begin, piece_size):
+    """
+    Client kết nối tới peer khác và tải một block (một phần của piece) theo giao thức Peer Wire.
+    
+    Các tham số:
+      - peer_ip, peer_port: địa chỉ của peer cung cấp dữ liệu.
+      - info_hash: 20-byte SHA1 hash của torrent (bytes).
+      - client_peer_id: 20-byte định danh của peer client (bytes).
+      - piece_index: số thứ tự của piece (int).
+      - begin: offset bắt đầu trong piece (int).
+      - piece_size: độ dài piece cần tải (int).
+    
+    Trả về: piece_data (bytes) nếu tải thành công, raise Exception nếu lỗi.
+    """
+
+    # Tạo socket TCP và kết nối tới peer
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(TIMEOUT)
+    s.connect((peer_ip, peer_port))
+
+    # --- Step 1: Handshake ---
+    # handshake = <pstrlen><pstr><reserved><info_hash><peer_id>
+    handshake = struct.pack("!B", PSTRLEN) + PSTR.encode() + RESERVED + info_hash + client_peer_id
+    s.sendall(handshake)
+    handshake_resp = s.recv(HANDSHAKE_LEN)
+    if len(handshake_resp) < HANDSHAKE_LEN:
+        s.close()
+        raise Exception("Handshake không thành công: không nhận đủ dữ liệu")
+    # Kiểm tra info_hash trong handshake (nằm sau pstrlen+pstr+reserved)
+    offset = 1 + PSTRLEN + 8
+    if handshake_resp[offset:offset+20] != info_hash:
+        s.close()
+        raise Exception("Info hash không khớp trong handshake")
+
+     # --- Step 2: Thiết lập trạng thái ban đầu ---
+    # Theo spec, ban đầu:
+    # am_choking = True, am_interested = False, peer_choking = True, peer_interested = False
+    am_choking = True
+    am_interested = False
+    peer_choking = True
+    peer_interested = False
+
+     # --- Step 3: Gửi Interested message ---
+    # Message: <length=1><msg id=2>
+    interested = struct.pack("!IB", 1, MSG_INTERESTED)
+    s.sendall(interested)
+    am_interested = True
+
+
+
+    piece_data = None
+    return piece_data
+
+# --- PHẦN PEER THREAD SERVER: PHẢN HỒI YÊU CẦU TẢI PIECE CỦA PEER CLIENT ---
+def handle_download_request_from_peer_client(client_socket, server_peer_id, seeded_pieces):
+    """
+    Hàm xử lý kết nối từ một client (peer khác yêu cầu block).
+    Thực hiện:
+      1. Nhận handshake, kiểm tra info_hash.
+      2. Gửi handshake phản hồi.
+      3. Đợi message interested (không bắt buộc bắt đầu, nhưng có thể update trạng thái).
+      4. Nhận message request và gửi phản hồi piece message.
+    
+    Tham số:
+      - client_socket: socket kết nối với client.
+      - info_hash: 20-byte hash torrent (bytes).
+      - server_peer_id: 20-byte định danh của peer server (bytes).
+      - seeded_pieces: dict {piece_index: bytes} chứa dữ liệu đã seed.
+    """
+
+    try:
+         # --- Nhận handshake từ client ---
+        handshake = client_socket.recv(HANDSHAKE_LEN)
+        if len(handshake) < HANDSHAKE_LEN:
+            raise Exception("Handshake không đủ dữ liệu")
+        # Kiểm tra info_hash (nằm sau 1 + pstrlen + 8 byte)
+        offset = 1 + PSTRLEN + 8
+        client_info_hash = handshake[offset:offset+20]
+
+        # --- Gửi handshake phản hồi ---
+        # Sử dụng cùng info_hash và server_peer_id của server
+        response_handshake = struct.pack("!B", PSTRLEN) + PSTR.encode() + RESERVED + client_info_hash + server_peer_id
+        client_socket.sendall(response_handshake)
+
+        # --- Đọc các message từ client ---
+        # Ví dụ: chờ nhận message interested (id=2) và message request (id=6)
+        # Ta có thể dùng vòng lặp đọc các message. Trong ví dụ này, chỉ xử lý 1 request.
+        # Đọc 4 byte length prefix
+        while True:
+            raw = client_socket.recv(4)
+            if len(raw) < 4:
+                raise Exception("Không nhận được length prefix")
+            msg_length = struct.unpack("!I", raw)[0]
+            # Đọc message payload
+            payload = b""
+            while len(payload) < msg_length:
+                chunk = client_socket.recv(msg_length - len(payload))
+                if not chunk:
+                    break
+                payload += chunk
+            if len(payload) < msg_length:
+                raise Exception("Không nhận đủ dữ liệu message")
+            msg_id = payload[0]
+
+            if msg_id == MSG_INTERESTED:
+                # In log để debug
+                print("Client đã gửi Interested message.")
+                # Gửi lại message unchoke
+                interested = struct.pack("!IB", 1, MSG_UNCHOKE)
+                client_socket.sendall(interested)
+
+            if True:    # when finish download piece
+                break
+        
+    except Exception as e:
+        print("Lỗi xử lý kết nối từ client:", e)
+    finally:
+        client_socket.close()
+
+# ===============================================================================================
+# ============== PEER TO PEER FUNCTION ==========================================================
+# ===============================================================================================
+
+# Function 5: Peer downloading file from multi peer
 
 def function2():
     print("Function 2 do")
@@ -367,7 +518,7 @@ if __name__ == "__main__":
 
     set_tracker_address(serverip,serverport)
 
-    peerid = 1                                          #random peer id
+    peerid = generate_peer_id();                                         #random peer id
     peerip = get_host_default_interface_ip()
     peerport = 33357
 
