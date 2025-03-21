@@ -339,9 +339,19 @@ def upload_file_to_local():
 # ============== HELPER FUNCTION FOR FUNCTION 5 =======================================================
 # ===============================================================================================
 
+# --- Hàm tải dữ liệu piece từ file ---
+def load_piece_data(piece_name):
+    """Đọc dữ liệu của piece từ file"""
+    file_path = os.path.join("data/pieces_data", piece_name)
+    if not os.path.exists(file_path):
+        print(f"Lỗi: Piece {piece_name} không tồn tại!")
+        return None
+    with open(file_path, "rb") as f:
+        return f.read()
+
 # --- PHẦN PEER THREAD PEER: YÊU CẦU TẢI PIECE CỦA PEER CLIENT ---
 def download_piece_from_peer_client(peer_ip, peer_port, info_hash, client_peer_id,
-                               piece_index, begin, piece_size):
+                               piece_index, begin, piece_size): 
     """
     Client kết nối tới peer khác và tải một block (một phần của piece) theo giao thức Peer Wire.
     
@@ -350,7 +360,7 @@ def download_piece_from_peer_client(peer_ip, peer_port, info_hash, client_peer_i
       - info_hash: 20-byte SHA1 hash của torrent (bytes).
       - client_peer_id: 20-byte định danh của peer client (bytes).
       - piece_index: số thứ tự của piece (int).
-      - begin: offset bắt đầu trong piece (int).
+      - begin: offset bắt đầu trong piece (int). begin mặc định = 0 vì ta sẽ gửi luôn piece chứ không phải block
       - piece_size: độ dài piece cần tải (int).
     
     Trả về: piece_data (bytes) nếu tải thành công, raise Exception nếu lỗi.
@@ -389,13 +399,74 @@ def download_piece_from_peer_client(peer_ip, peer_port, info_hash, client_peer_i
     s.sendall(interested)
     am_interested = True
 
+     # --- Step 4: Chờ nhận message unchoke ---
+    while True:
+        raw_len = s.recv(4)
+        if len(raw_len) < 4:
+            s.close()
+            raise Exception("Không nhận đủ length prefix cho message")
+        msg_len = struct.unpack("!I", raw_len)[0]
+        if msg_len == 0:
+            continue  # keep-alive
+        msg = b""
+        while len(msg) < msg_len:
+            chunk = s.recv(msg_len - len(msg))
+            if not chunk:
+                break
+            msg += chunk
+        if len(msg) < msg_len:
+            s.close()
+            raise Exception("Không nhận đủ dữ liệu của message")
+        msg_id = msg[0]
+        if msg_id == MSG_UNCHOKE:
+            peer_choking = False
+            break
+        # Nếu nhận được message choke, cập nhật trạng thái
+        elif msg_id == MSG_CHOKE:
+            peer_choking = True
 
+    if peer_choking:
+        s.close()
+        raise Exception("Peer vẫn đang chặn (choking); không thể tải block.")
 
-    piece_data = None
+    # --- Step 5: Gửi Request message ---
+    # Request message: <length=13><msg id=6><piece index (4 bytes)><begin (4 bytes)><block length (4 bytes)>
+    request_payload = struct.pack("!III", piece_index, begin, piece_size)
+    request_msg = struct.pack("!IB", 13, MSG_REQUEST) + request_payload
+    s.sendall(request_msg)
+
+   # --- Step 6: Nhận Piece message ---
+    # Piece message: <length prefix><msg id=7><piece index (4 bytes)><begin (4 bytes)><block data>
+    raw = s.recv(4)
+    if len(raw) < 4:
+        s.close()
+        raise Exception("Không nhận được length prefix cho piece message")
+    piece_msg_length = struct.unpack("!I", raw)[0]
+    payload = b""
+    while len(payload) < piece_msg_length:
+        chunk = s.recv(piece_msg_length - len(payload))
+        if not chunk:
+            break
+        payload += chunk
+    if len(payload) < piece_msg_length:
+        s.close()
+        raise Exception("Không nhận đủ dữ liệu cho piece message")
+    if payload[0] != MSG_PIECE:
+        s.close()
+        raise Exception("Đã mong đợi piece message (id=7) nhưng nhận được id khác")
+    # Giải mã piece message: [id(1) | piece index(4) | begin(4) | block data]
+    received_piece_index = struct.unpack("!I", payload[1:5])[0]
+    received_begin = struct.unpack("!I", payload[5:9])[0]
+    piece_data = payload[9:]
+    if received_piece_index != piece_index or received_begin != begin:
+        s.close()
+        raise Exception("Thông tin piece nhận không khớp với yêu cầu")
+    s.close()
+
     return piece_data
 
 # --- PHẦN PEER THREAD SERVER: PHẢN HỒI YÊU CẦU TẢI PIECE CỦA PEER CLIENT ---
-def handle_download_request_from_peer_client(client_socket, server_peer_id, seeded_pieces):
+def handle_download_request_from_peer_client(client_socket, server_peer_id):
     """
     Hàm xử lý kết nối từ một client (peer khác yêu cầu block).
     Thực hiện:
@@ -408,7 +479,7 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id, seed
       - client_socket: socket kết nối với client.
       - info_hash: 20-byte hash torrent (bytes).
       - server_peer_id: 20-byte định danh của peer server (bytes).
-      - seeded_pieces: dict {piece_index: bytes} chứa dữ liệu đã seed.
+      # - seeded_pieces: dict {piece_index: bytes} chứa dữ liệu đã seed.
     """
 
     try:
@@ -419,6 +490,7 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id, seed
         # Kiểm tra info_hash (nằm sau 1 + pstrlen + 8 byte)
         offset = 1 + PSTRLEN + 8
         client_info_hash = handshake[offset:offset+20]
+        client_peer_id = handshake[1 + PSTRLEN + 8 + 20:]  # 20 byte cuối là peer_id
 
         # --- Gửi handshake phản hồi ---
         # Sử dụng cùng info_hash và server_peer_id của server
@@ -448,12 +520,51 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id, seed
             if msg_id == MSG_INTERESTED:
                 # In log để debug
                 print("Client đã gửi Interested message.")
-                # Gửi lại message unchoke
-                interested = struct.pack("!IB", 1, MSG_UNCHOKE)
-                client_socket.sendall(interested)
+                # Gửi message unchoke
+                unchoke = struct.pack("!IB", 1, MSG_UNCHOKE)
+                client_socket.sendall(unchoke)
+                # Sau đó, chờ nhận request message
+                # Đọc tiếp length prefix cho request
+                raw = client_socket.recv(4)
+                if len(raw) < 4:
+                    raise Exception("Không nhận được length prefix cho request")
+                req_length = struct.unpack("!I", raw)[0]
+                req_payload = b""
+                while len(req_payload) < req_length:
+                    chunk = client_socket.recv(req_length - len(req_payload))
+                    if not chunk:
+                        break
+                    req_payload += chunk
+                if len(req_payload) < req_length:
+                    raise Exception("Không nhận đủ dữ liệu cho request")
+                if req_payload[0] != MSG_REQUEST:
+                    raise Exception("Không nhận được request message (id=6)")
+                # Giải mã request: [id(1) | piece index(4) | begin(4) | block length(4)]
+                piece_index = struct.unpack("!I", req_payload[1:5])[0]
+                begin = struct.unpack("!I", req_payload[5:9])[0]
+                req_block_length = struct.unpack("!I", req_payload[9:13])[0]
+                print(f"Nhận request: piece {piece_index}, begin {begin}, length {req_block_length}")
 
-            if True:    # when finish download piece
+                # Đọc dữ liệu của piece từ file
+                piece_name = f"{client_info_hash}_{piece_index}"     # Thay "info_hash_" bằng hash thực tế
+                piece_data = load_piece_data(piece_name)
+
+                if piece_data is None:
+                    print("Piece none data")
+                    return  # Không có dữ liệu để gửi
+                # Lấy đoạn dữ liệu từ begin đến begin+req_block_length
+                # block_data = piece_data[begin:begin+req_block_length]
+
+                # --- Gửi Piece message ---
+                # Piece message: <length prefix><msg id=7><piece index (4)><begin (4)><block data>
+                piece_msg_payload = struct.pack("!I", piece_index) + struct.pack("!I", begin) + piece_data
+                piece_msg = struct.pack("!IB", 9 + len(piece_data), MSG_PIECE) + piece_msg_payload
+                client_socket.sendall(piece_msg)
+                print(f"Đã gửi piece {piece_index} dữ liệu cho {client_peer_id}")
+
                 break
+            else:
+                raise Exception("Message không được xử lý: không phải Interested hoặc Request")
         
     except Exception as e:
         print("Lỗi xử lý kết nối từ client:", e)
