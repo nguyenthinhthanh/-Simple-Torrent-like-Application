@@ -46,11 +46,15 @@ Mô tả dự án
    ```bash
    git clone https://github.com/nguyenthinhthanh/-Simple-Torrent-like-Application
    ```
-2. **Chạy Tracker Server:**
+2. **Setup Virtual Mechine:**
+   ```bash
+   Settings của từng máy ảo → Network → Chọn Bridged Adapter hoặc Host-Only Adapter.
+   ```
+3. **Chạy Tracker Server:**
    ```bash
    python tracker.py
    ```
-3. **Chạy Peer Node:**
+4. **Chạy Peer Node:**
    ```bash
    python peer_sta.py --server-ip 123.456 --server-port 12345
    ```
