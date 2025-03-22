@@ -38,6 +38,8 @@ def handle_peer_request(conn, addr):
     """
     Xử lý yêu cầu HTTP từ Peer
     """
+    end = False
+
     try:
         request = conn.recv(1024).decode()
         print(f"Nhận yêu cầu từ {addr}:\n{request}\n")
@@ -104,12 +106,15 @@ def handle_peer_request(conn, addr):
             f"{response_body}"
         )
         conn.sendall(response.encode())
+
+        end = True
     
     except Exception as e:
         print(f"Lỗi xử lý peer {addr}: {e}")
     
     finally:
         conn.close()
+        return end
 
 # New peer connect to tracker
 def new_connection(addr, conn):
@@ -122,7 +127,11 @@ def new_connection(addr, conn):
             Need to do here handle communication between tracker and peer
             """
             #data = conn.recv(1024)
-            handle_peer_request(conn, addr)
+            result = handle_peer_request(conn, addr)
+
+            if result:
+                break
+
         except Exception:
             print('Error occured!')
             break

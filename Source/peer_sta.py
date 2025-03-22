@@ -140,14 +140,14 @@ def connect_server(threadnum, host, port):
     [t.join() for t in threads]
 
 def thread_client(id, serverip, serverport, peerip, peerport):
-    #event.wait()                                                    # Wait signal for server thread
+    event.wait()                                                    # Wait signal for server thread
 
     print('Client ID {} connecting to {}:{:d}'.format(id, serverip, serverport))
 
     client_socket = socket.socket()
     client_socket.connect((serverip, serverport))
 
-    print('Client ID {:d} connect success to {}:{:d}'.format(id, serverip, serverport))
+    print('Client ID {} connect success to {}:{}'.format(id, serverip, serverport))
 
     while True:
         print_gui()
