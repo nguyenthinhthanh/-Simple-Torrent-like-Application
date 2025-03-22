@@ -14,7 +14,7 @@ import bencodepy
 import urllib.parse
 from hashlib import sha1
 from threading import Thread
-
+from urllib.parse import urlparse, parse_qs, urlencode
 
 base_dir = "data"
 
@@ -154,9 +154,10 @@ def thread_client(id, serverip, serverport, peerip, peerport):
         command = input("")
 
         if command == "1":
-            upload_file_to_local();
+            upload_file_to_local()
         elif command == "2":
-            function2()
+            #info_hash = get_list_info_hash
+            register_with_tracker(serverip,serverport,magnet_list,id,peerport)
         elif command == "3":
             function3()
         elif command == "4":
@@ -232,6 +233,24 @@ def print_file_info(file_info):
         f"info_hash({file_info['info_hash']}) - {file_info['size']} bytes - {file_info['piece_count']} piece(s) - {file_info['name']}"
     )
 
+def create_magnet_uri(info_hash, display_name="Unknown", tracker=None):
+    base = f"magnet:?xt=urn:btih:{info_hash}"
+    
+    # Thêm tên file (dn) nếu có
+    params = {}
+    if display_name:
+        params["dn"] = display_name
+
+    # Thêm tracker (tr) nếu có
+    if tracker:
+        params["tr"] = tracker
+
+    # Ghép các tham số vào URL
+    query_string = urlencode(params)
+    
+    return base + "&" + query_string if query_string else base
+
+
 # ===============================================================================================
 # ============== HELPER FUNCTION FOR FUNCTION 1 =================================================
 # ===============================================================================================
@@ -247,6 +266,8 @@ def calculate_piece_hashes(byte_array, piece_length):
 # ===============================================================================================
 
 # Function 1: Add files from the computer to local storage, prepare to register with tracker
+magnet_list = []
+
 def upload_file_to_local():
     file_path = input("\nEnter the file path want to share : ")
     if not os.path.exists(file_path):
@@ -320,6 +341,9 @@ def upload_file_to_local():
     }
     save_file_info(file_info)
 
+    magnet = create_magnet_uri(info_hash_magnet,name_file,TRACKER_ADDRESS)
+    magnet_list.append(magnet)
+
     # Cắt thành các piece và lưu dữ liệu từng piece
     for i in range(piece_count):
         begin = i * PIECE_SIZE
@@ -334,6 +358,24 @@ def upload_file_to_local():
     print_file_info(file_info)
     print("\n")
     return
+
+# function 2: Register with tracker
+def register_with_tracker(tracker_host, tracker_port, magnet, peer_id, port):
+    """
+    Gửi yêu cầu đăng ký với Tracker bằng HTTP GET
+    """
+    # Xây dựng URL query
+    query = f"magnet={magnet}&peer_id={peer_id}&port={port}&uploaded=0&downloaded=0&left=0&event=started"
+    request = f"GET /announce?{query} HTTP/1.1\r\nHost: {tracker_host}\r\nConnection: close\r\n\r\n"
+
+    # Kết nối đến Tracker qua socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((tracker_host, tracker_port))
+        s.sendall(request.encode())
+
+        # Nhận phản hồi từ Tracker
+        response = s.recv(4096).decode()
+        print(f"Phản hồi từ Tracker:\n{response}")
 
 # ===============================================================================================
 # ============== HELPER FUNCTION FOR FUNCTION 5 =======================================================
