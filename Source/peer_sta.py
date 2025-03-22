@@ -46,7 +46,7 @@ PIECE_SIZE = 512 * 1024
 TRACKER_ADDRESS = None
 
 # --- CÁC HẰNG SỐ & THAM SỐ CỦA Peer wire protocol https://wiki.theory.org/BitTorrentSpecification#Peer_wire_protocol_.28TCP.29 ---
-PSTR = "BitTorrent protocol"           # Protocol identifier
+PSTR = "BitTorrent protocol"         # Protocol identifier
 PSTRLEN = len(PSTR)                    # Độ dài của pstr
 RESERVED = b'\x00' * 8                 # 8 byte dành riêng, mặc định là 0
 HANDSHAKE_LEN = 49 + PSTRLEN           # Tổng độ dài handshake
@@ -146,6 +146,7 @@ def thread_client(id, serverip, serverport, peerip, peerport):
 
     client_socket = socket.socket()
     client_socket.connect((serverip, serverport))
+
 
     print('Client ID {} connect success to {}:{}'.format(id, serverip, serverport))
 
