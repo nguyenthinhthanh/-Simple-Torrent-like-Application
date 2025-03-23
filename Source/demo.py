@@ -65,6 +65,7 @@ info_hash_raw = "abcdef1234567890abcdef1234567890abcdef12"
 display_name_raw = "example_file"
 tracker_raw = "http://tracker.example.com/announce"
 magnet_link = create_magnet_uri(info_hash_raw, display_name_raw, tracker_raw)
+print(f"Magnet {magnet_link}")
 
 # Step 1: Parse the magnet URI
 info_hash, file_name, tracker_url = parse_magnet_uri(magnet_link)

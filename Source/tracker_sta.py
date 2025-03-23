@@ -79,6 +79,7 @@ def handle_peer_request(conn, addr):
             # Trích xuất info_hash từ mỗi magnet link
             info_hash_list = []
             for magnet in magnet_list:
+                print(f"Magnet {magnet}")
                 info_hash, display_name, tracker_url = parse_magnet_uri(magnet)
                 info_hash_list.append(info_hash)
                 # online_file.append({display_name,magnet})
@@ -132,7 +133,7 @@ def handle_peer_request(conn, addr):
             file_list_json = json.dumps(online_file, indent=4)
 
             response_body = (
-                f"Registered peer: {peer_id} on {addr[0]}:{port}\n"
+                f"Registered peer: {peer_id} on {addr[0]}\n"
                 f"Online file list: {file_list_json}\n"
                 "Status: OK\n"
             )
@@ -172,6 +173,8 @@ def new_connection(addr, conn):
             """
             #data = conn.recv(1024)
             handle_peer_request(conn, addr)
+
+            print(online_file)
 
         except Exception:
             print('Error occured!')
