@@ -366,7 +366,10 @@ def register_with_tracker(client_socket, tracker_host, tracker_port, magnet, pee
     Gửi yêu cầu đăng ký với Tracker bằng HTTP GET
     """
     # Xây dựng URL query
-    query = f"magnet={magnet}&peer_id={peer_id}&port={port}&uploaded=0&downloaded=0&left=0&event=started"
+    # Mã hóa magnet để đảm bảo chuỗi query không bị lỗi
+    # Mã hóa từng magnet URI
+    magnet_list_encoded = [urllib.parse.quote(m, safe='') for m in magnet]
+    query = f"magnet={magnet_list_encoded}&peer_id={peer_id}&port={port}&uploaded=0&downloaded=0&left=0&event=started"
     request = f"GET /announce?{query} HTTP/1.1\r\nHost: {tracker_host}\r\nConnection: close\r\n\r\n"
 
     # Gửi request đến Tracker qua socket
@@ -375,6 +378,7 @@ def register_with_tracker(client_socket, tracker_host, tracker_port, magnet, pee
     # Nhận phản hồi từ Tracker
     response = client_socket.recv(4096).decode()
     print(f"Phản hồi từ Tracker:\n{response}")
+
         
 
 # function 3: Get online file list from tracker
@@ -393,14 +397,17 @@ def get_list_shared_files(client_socket, tracker_host, tracker_port, peer_id):
     client_socket.sendall(request.encode())
 
     # Nhận phản hồi từ Tracker
-    response = ""
-    while True:
-        chunk = client_socket.recv(4096)
-        if not chunk:
-            break
-        response += chunk.decode()
-    print("Phản hồi từ Tracker:")
-    print(response)
+    # response = ""
+    # while True:
+    #     chunk = client_socket.recv(4096)
+    #     if not chunk:
+    #         break
+    #     response += chunk.decode()
+    # print("Phản hồi từ Tracker:")
+    # print(response)
+    # Nhận phản hồi từ Tracker
+    response = client_socket.recv(4096).decode()
+    print(f"Phản hồi từ Tracker:\n{response}")
         
 
 # ===============================================================================================
