@@ -79,12 +79,13 @@ def handle_peer_request(conn, addr):
             # Trích xuất info_hash từ mỗi magnet link
             info_hash_list = []
             for magnet in magnet_list:
-                print(f"Magnet {magnet}")
+                #print(f"Magnet {magnet}")
                 info_hash, display_name, tracker_url = parse_magnet_uri(magnet)
                 info_hash_list.append(info_hash)
                 # online_file.append({display_name,magnet})
-                online_file.append({"display_name": display_name, "magnet": magnet})
-
+                new_entry = {"display_name": display_name, "magnet": magnet}
+                if new_entry not in online_file:
+                    online_file.append(new_entry)
 
             # Lưu thông tin Peer cho từng info_hash
             peer_list.append({
@@ -163,7 +164,8 @@ def handle_peer_request(conn, addr):
 
 # New peer connect to tracker
 def new_connection(addr, conn):
-    print(addr)
+    
+    print(f"Client connected {addr}")
     while True:
         try:
             # This command receives data from the client (up to 1024 bytes at a time).
@@ -173,8 +175,6 @@ def new_connection(addr, conn):
             """
             #data = conn.recv(1024)
             handle_peer_request(conn, addr)
-
-            print(online_file)
 
         except Exception:
             print('Error occured!')
