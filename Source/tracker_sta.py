@@ -39,8 +39,6 @@ def handle_peer_request(conn, addr):
     """
     Xử lý yêu cầu HTTP từ Peer
     """
-    end = False
-
     try:
         request = conn.recv(1024).decode()
         print(f"Nhận yêu cầu từ {addr}:\n{request}\n")
@@ -53,7 +51,7 @@ def handle_peer_request(conn, addr):
         if method != "GET":
             response = "HTTP/1.1 405 Method Not Allowed\r\n\r\nMethod Not Allowed"
             conn.sendall(response.encode())
-            conn.close()
+            #conn.close()
             return
 
         # Phân tích URL để lấy tham số query
@@ -69,7 +67,7 @@ def handle_peer_request(conn, addr):
             if not all(param in params for param in required_params):
                 response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
                 conn.sendall(response.encode())
-                conn.close()
+                #conn.close()
                 return
 
             # Lấy giá trị từ query
@@ -123,7 +121,7 @@ def handle_peer_request(conn, addr):
             if not all(param in params for param in required_params):
                 response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
                 conn.sendall(response.encode())
-                conn.close()
+                #conn.close()
                 return
             
             peer_id = params["peer_id"][0]
@@ -152,17 +150,15 @@ def handle_peer_request(conn, addr):
             response_body = "Invalid event"
             response = f"HTTP/1.1 400 Bad Request\r\nContent-Length: {len(response_body)}\r\n\r\n{response_body}"
             conn.sendall(response.encode())
-            conn.close()
+            #conn.close()
             return
-
-        end = True
     
     except Exception as e:
         print(f"Lỗi xử lý peer {addr}: {e}")
     
     finally:
-        conn.close()
-        return end
+        #conn.close()
+        return True
 
 # New peer connect to tracker
 def new_connection(addr, conn):
@@ -175,10 +171,7 @@ def new_connection(addr, conn):
             Need to do here handle communication between tracker and peer
             """
             #data = conn.recv(1024)
-            result = handle_peer_request(conn, addr)
-
-            if result:
-                break
+            handle_peer_request(conn, addr)
 
         except Exception:
             print('Error occured!')

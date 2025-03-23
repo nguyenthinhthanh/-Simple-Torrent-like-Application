@@ -158,9 +158,9 @@ def thread_client(id, serverip, serverport, peerip, peerport):
             upload_file_to_local()
         elif command == "2":
             #info_hash = get_list_info_hash
-            register_with_tracker(serverip,serverport,magnet_list,id,peerport)
+            register_with_tracker(client_socket,serverip,serverport,magnet_list,id,peerport)
         elif command == "3":
-            get_list_shared_files(serverip,serverport,id)
+            get_list_shared_files(client_socket,serverip,serverport,id)
         elif command == "4":
             function4()
         elif command == "5":
@@ -361,7 +361,7 @@ def upload_file_to_local():
     return
 
 # function 2: Register with tracker
-def register_with_tracker(tracker_host, tracker_port, magnet, peer_id, port):
+def register_with_tracker(client_socket, tracker_host, tracker_port, magnet, peer_id, port):
     """
     Gửi yêu cầu đăng ký với Tracker bằng HTTP GET
     """
@@ -369,17 +369,16 @@ def register_with_tracker(tracker_host, tracker_port, magnet, peer_id, port):
     query = f"magnet={magnet}&peer_id={peer_id}&port={port}&uploaded=0&downloaded=0&left=0&event=started"
     request = f"GET /announce?{query} HTTP/1.1\r\nHost: {tracker_host}\r\nConnection: close\r\n\r\n"
 
-    # Kết nối đến Tracker qua socket
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((tracker_host, tracker_port))
-        s.sendall(request.encode())
+    # Gửi request đến Tracker qua socket
+    client_socket.sendall(request.encode())
 
-        # Nhận phản hồi từ Tracker
-        response = s.recv(4096).decode()
-        print(f"Phản hồi từ Tracker:\n{response}")
+    # Nhận phản hồi từ Tracker
+    response = client_socket.recv(4096).decode()
+    print(f"Phản hồi từ Tracker:\n{response}")
+        
 
 # function 3: Get online file list from tracker
-def get_list_shared_files(tracker_host, tracker_port, peer_id):
+def get_list_shared_files(client_socket, tracker_host, tracker_port, peer_id):
     """
     Gửi yêu cầu đến Tracker để xem danh sách các file đang được chia sẻ.
       - peer_id: định danh của peer gửi yêu cầu
@@ -391,19 +390,18 @@ def get_list_shared_files(tracker_host, tracker_port, peer_id):
     request = f"GET /announce?{query} HTTP/1.1\r\nHost: {tracker_host}\r\nConnection: close\r\n\r\n"
 
     # Kết nối đến Tracker qua socket và gửi request
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.connect((tracker_host, tracker_port))
-        s.sendall(request.encode())
+    client_socket.sendall(request.encode())
 
-        # Nhận phản hồi từ Tracker
-        response = ""
-        while True:
-            chunk = s.recv(4096)
-            if not chunk:
-                break
-            response += chunk.decode()
-        print("Phản hồi từ Tracker:")
-        print(response)
+    # Nhận phản hồi từ Tracker
+    response = ""
+    while True:
+        chunk = client_socket.recv(4096)
+        if not chunk:
+            break
+        response += chunk.decode()
+    print("Phản hồi từ Tracker:")
+    print(response)
+        
 
 # ===============================================================================================
 # ============== HELPER FUNCTION FOR FUNCTION 5 =======================================================
