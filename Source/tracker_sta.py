@@ -1,3 +1,4 @@
+import json
 import socket
 import http.server
 import socketserver
@@ -59,53 +60,100 @@ def handle_peer_request(conn, addr):
         parsed_url = urlparse(path)
         params = parse_qs(parsed_url.query)
 
-        # Kiểm tra các tham số bắt buộc
-        required_params = ["magnet", "peer_id", "port", "uploaded", "downloaded", "left", "event"]
-        if not all(param in params for param in required_params):
-            response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
+        # Kiểm tra event để xử lý tương ứng : started, stopped, completed, list
+        event = params["event"][0]
+
+        if event == "started":
+            # Kiểm tra các tham số bắt buộc
+            required_params = ["magnet", "peer_id", "port", "uploaded", "downloaded", "left", "event"]
+            if not all(param in params for param in required_params):
+                response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
+                conn.sendall(response.encode())
+                conn.close()
+                return
+
+            # Lấy giá trị từ query
+            magnet_list = params["magnet"] 
+            peer_id = params["peer_id"][0]
+            port = params["port"][0]
+            #event = params["event"][0]
+
+            # Trích xuất info_hash từ mỗi magnet link
+            info_hash_list = []
+            for magnet in magnet_list:
+                info_hash, display_name, tracker_url = parse_magnet_uri(magnet)
+                info_hash_list.append(info_hash)
+                # online_file.append({display_name,magnet})
+                online_file.append({"display_name": display_name, "magnet": magnet})
+
+
+            # Lưu thông tin Peer cho từng info_hash
+            peer_list.append({
+                "peer_id": peer_id,
+                "port": port,
+                "ip": addr[0],
+                "info_hash" : info_hash_list,
+                "magnet" : magnet_list
+            })
+
+            # Gửi phản hồi HTTP
+            # Tạo nội dung phản hồi
+            response_body = (
+                f"Request peer: {peer_id} on {addr[0]}:{port}\n"
+                f"Info Hashes: {', '.join(info_hash_list)}\n"
+                "Status: OK\n"
+            )
+
+            # Gửi phản hồi HTTP
+            response = (
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/plain\r\n"
+                f"Content-Length: {len(response_body)}\r\n"
+                "\r\n"
+                f"{response_body}"
+            )
+            conn.sendall(response.encode())
+        elif event == "completed":
+            pass
+        elif event == "stopped":
+            pass
+        elif event == "list":
+            # Kiểm tra các tham số bắt buộc
+            required_params = ["peer_id","event"]
+            if not all(param in params for param in required_params):
+                response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
+                conn.sendall(response.encode())
+                conn.close()
+                return
+            
+            peer_id = params["peer_id"][0]
+
+            # Gửi phản hồi HTTP
+            # Tạo nội dung phản hồi
+            # Chuyển đổi danh sách file thành JSON string
+            file_list_json = json.dumps(online_file, indent=4)
+
+            response_body = (
+                f"Registered peer: {peer_id} on {addr[0]}:{port}\n"
+                f"Online file list: {file_list_json}\n"
+                "Status: OK\n"
+            )
+
+            # Gửi phản hồi HTTP
+            response = (
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/plain\r\n"
+                f"Content-Length: {len(response_body)}\r\n"
+                "\r\n"
+                f"{response_body}"
+            )
+            conn.sendall(response.encode())
+        else:
+            response_body = "Invalid event"
+            response = f"HTTP/1.1 400 Bad Request\r\nContent-Length: {len(response_body)}\r\n\r\n{response_body}"
             conn.sendall(response.encode())
             conn.close()
             return
-
-        # Lấy giá trị từ query
-        magnet_list = params["magnet"] 
-        peer_id = params["peer_id"][0]
-        port = params["port"][0]
-        event = params["event"][0]
-
-        # Trích xuất info_hash từ mỗi magnet link
-        info_hash_list = []
-        for magnet in magnet_list:
-            info_hash, display_name, tracker_url = parse_magnet_uri(magnet)
-            info_hash_list.append(info_hash)
-            online_file.append({display_name,magnet})
-
-        # Lưu thông tin Peer cho từng info_hash
-        peer_list.append({
-            "peer_id": peer_id,
-            "port": port,
-            "ip": addr[0],
-            "info_hash" : info_hash_list,
-            "magnet" : magnet_list
-        })
-
-        # Gửi phản hồi HTTP
-        # Tạo nội dung phản hồi
-        response_body = (
-            f"Registered peer: {peer_id} on {addr[0]}:{port}\n"
-            f"Info Hashes: {', '.join(info_hash_list)}\n"
-            "Status: OK\n"
-        )
-
-        # Gửi phản hồi HTTP
-        response = (
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Type: text/plain\r\n"
-            f"Content-Length: {len(response_body)}\r\n"
-            "\r\n"
-            f"{response_body}"
-        )
-        conn.sendall(response.encode())
 
         end = True
     

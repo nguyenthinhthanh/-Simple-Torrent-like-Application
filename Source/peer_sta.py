@@ -160,7 +160,7 @@ def thread_client(id, serverip, serverport, peerip, peerport):
             #info_hash = get_list_info_hash
             register_with_tracker(serverip,serverport,magnet_list,id,peerport)
         elif command == "3":
-            function3()
+            get_list_shared_files(serverip,serverport,id)
         elif command == "4":
             function4()
         elif command == "5":
@@ -377,6 +377,33 @@ def register_with_tracker(tracker_host, tracker_port, magnet, peer_id, port):
         # Nhận phản hồi từ Tracker
         response = s.recv(4096).decode()
         print(f"Phản hồi từ Tracker:\n{response}")
+
+# function 3: Get online file list from tracker
+def get_list_shared_files(tracker_host, tracker_port, peer_id):
+    """
+    Gửi yêu cầu đến Tracker để xem danh sách các file đang được chia sẻ.
+      - peer_id: định danh của peer gửi yêu cầu
+      - event=list: hành động lấy danh sách file
+    Tracker sẽ phản hồi bằng HTTP.
+    """
+    # Xây dựng URL query
+    query = f"peer_id={peer_id}&event=list"
+    request = f"GET /announce?{query} HTTP/1.1\r\nHost: {tracker_host}\r\nConnection: close\r\n\r\n"
+
+    # Kết nối đến Tracker qua socket và gửi request
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.connect((tracker_host, tracker_port))
+        s.sendall(request.encode())
+
+        # Nhận phản hồi từ Tracker
+        response = ""
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            response += chunk.decode()
+        print("Phản hồi từ Tracker:")
+        print(response)
 
 # ===============================================================================================
 # ============== HELPER FUNCTION FOR FUNCTION 5 =======================================================
@@ -642,9 +669,9 @@ def function5():
 
 def print_gui():
     print("\nFUNCTION LIST")
-    print("1 - function 1")
-    print("2 - function 2")
-    print("3 - function 3")
+    print("1 - Add a file want to share")
+    print("2 - Peer register with tracker")
+    print("3 - Get online file list")
     print("4 - function 4")
     print("5 - function 5")
     print("6 - Exit")
