@@ -162,7 +162,9 @@ def thread_client(id, serverip, serverport, peerip, peerport):
         elif command == "3":
             get_list_shared_files(client_socket,serverip,serverport,id)
         elif command == "4":
-            function4()
+            # Just for testing
+            info_hash_test = "60194213e559cd3409ef8fcb57ed37592e472819"
+            get_peer_list(client_socket,serverip,serverport,id,info_hash_test)
         elif command == "5":
             function5()
         elif command == "6":
@@ -413,6 +415,31 @@ def get_list_shared_files(client_socket, tracker_host, tracker_port, peer_id):
 # ===============================================================================================
 # ============== HELPER FUNCTION FOR FUNCTION 5 =======================================================
 # ===============================================================================================
+
+#  --- Hàm peer yêu cầu tracker trả về danh sách peer đang chia sẻ file có info_hash ---
+def get_peer_list(client_socket, tracker_host, tracker_port, peer_id, info_hash):
+    """
+    Gửi yêu cầu đến Tracker để lấy danh sách các peer đang có file dựa theo info_hash.
+    Yêu cầu được gửi qua HTTP GET với các tham số:
+      - peer_id: định danh của peer gửi yêu cầu
+      - info_hash: chuỗi (hoặc hash) định danh file (torrent) cần tìm các peer
+      - event=get_peer_list: báo hiệu muốn lấy danh sách peer (để tracker trả về danh sách peer)
+    """
+    # Xây dựng URL query
+    query = f"peer_id={peer_id}&info_hash={info_hash}&event=get_peer_list"
+    request = (
+        f"GET /announce?{query} HTTP/1.1\r\n"
+        f"Host: {tracker_host}\r\n"
+        "Connection: close\r\n\r\n"
+    )
+    
+    # Kết nối đến Tracker qua socket và gửi request
+     # Kết nối đến Tracker qua socket và gửi request
+    client_socket.sendall(request.encode())
+
+    # Nhận phản hồi từ Tracker
+    response = client_socket.recv(4096).decode()
+    print(f"Phản hồi peer list từ Tracker:\n{response}")
 
 # --- Hàm tải dữ liệu piece từ file ---
 def load_piece_data(piece_name):

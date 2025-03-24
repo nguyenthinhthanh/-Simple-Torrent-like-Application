@@ -9,6 +9,12 @@ from urllib.parse import urlparse, parse_qs
 # ============== HELPER FUNCTION ================================================================
 # ===============================================================================================
 
+TRACKER_ADDRESS = None
+
+def set_tracker_address(hostip, port):
+    global TRACKER_ADDRESS 
+    TRACKER_ADDRESS = "http://{}:{}".format(hostip, port)
+
 # Function to parse a magnet URI
 def parse_magnet_uri(magnet_link):
     # Parse the magnet link
@@ -134,8 +140,55 @@ def handle_peer_request(conn, addr):
             file_list_json = json.dumps(online_file, indent=4)
 
             response_body = (
-                f"Registered peer: {peer_id} on {addr[0]}\n"
+                f"Request peer: {peer_id} on {addr[0]}\n"
                 f"Online file list: {file_list_json}\n"
+                "Status: OK\n"
+            )
+
+            # Gửi phản hồi HTTP
+            response = (
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/plain\r\n"
+                f"Content-Length: {len(response_body)}\r\n"
+                "\r\n"
+                f"{response_body}"
+            )
+            conn.sendall(response.encode())
+        elif event == "get_peer_list":
+            # Kiểm tra các tham số bắt buộc
+            required_params = ["peer_id","info_hash","event"]
+            if not all(param in params for param in required_params):
+                response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
+                conn.sendall(response.encode())
+                #conn.close()
+                return
+            
+            peer_id = params["peer_id"][0]
+            info_hash = params["info_hash"][0]
+
+            # Gửi phản hồi HTTP
+            # Tạo nội dung phản hồi
+            # Lọc danh sách để lấy những peer có info_hash trùng khớp với yêu cầu
+            filtered_peers = []
+            for p in peer_list:
+                # Kiểm tra nếu info_hash yêu cầu có nằm trong list info_hash của p
+                if info_hash in p["info_hash"]:
+                    filtered_peers.append({
+                        "peer_id": p["peer_id"],
+                        "port": p["port"],
+                        "ip": p["ip"]
+                    })
+
+            # Tạo phản hồi tracker: trả về tracker id và danh sách các peer phù hợp
+            response_dict = {
+                "tracker": TRACKER_ADDRESS,
+                "peers": filtered_peers
+            }
+            response_body = json.dumps(response_dict)
+
+            response_body = (
+                f"Request peer: {peer_id} on {addr[0]}\n"
+                f"Peer list: {response_dict}\n"
                 "Status: OK\n"
             )
 
@@ -211,5 +264,7 @@ def server_program(hostip, port):
 if __name__ == "__main__":
     hostip = get_host_default_interface_ip()
     port = 22236                                                    # Random port from 1024 to 65535
+    set_tracker_address(hostip,port)
+
     print("Listening on: {}:{}".format(hostip, port))
     server_program(hostip, port)
