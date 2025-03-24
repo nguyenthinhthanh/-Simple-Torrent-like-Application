@@ -244,36 +244,59 @@ def print_file_info(file_info):
 
 # Function to parse a magnet URI
 def parse_magnet_uri(magnet_link):
-    # Parse the magnet link
+    """
+    Phân tích magnet URI và trả về các thông tin:
+      - info_hash: mã hash của file
+      - display_name: tên file (nếu có, mặc định là "Unknown")
+      - tracker_url: URL của tracker (nếu có)
+      - file_size: kích thước file (xl) theo byte (nếu có, dưới dạng int, nếu không có thì None)
+    """
     parsed = urlparse(magnet_link)
     params = parse_qs(parsed.query)
     
-    # Extract info hash
-    info_hash = params.get('xt')[0].split(":")[-1]
+    # Trích xuất info_hash từ xt
+    xt_values = params.get('xt', [])
+    if xt_values:
+        info_hash = xt_values[0].split(":")[-1]
+    else:
+        info_hash = ""
     
-    # Extract display name (optional)
+    # Trích xuất display name (dn)
     display_name = params.get('dn', ['Unknown'])[0]
     
-    # Extract tracker URL (optional)
+    # Trích xuất tracker URL (tr)
     tracker_url = params.get('tr', [''])[0]
     
-    return info_hash, display_name, tracker_url
+    # Trích xuất file size (xl)
+    xl_value = params.get('xl', [None])[0]
+    try:
+        file_size = int(xl_value) if xl_value is not None else None
+    except ValueError:
+        file_size = None
+    
+    return info_hash, display_name, tracker_url, file_size
 
-def create_magnet_uri(info_hash, display_name="Unknown", tracker=None):
+def create_magnet_uri(info_hash, display_name="Unknown", tracker=None, file_size=None):
+    """
+    Tạo magnet URI với các tham số:
+      - info_hash: hash của file (bắt buộc)
+      - display_name: tên file (dn) [mặc định "Unknown"]
+      - tracker: URL của tracker (tr) [tuỳ chọn]
+      - file_size: kích thước file, tính theo byte (xl) [tuỳ chọn]
+    """
     base = f"magnet:?xt=urn:btih:{info_hash}"
     
-    # Thêm tên file (dn) nếu có
+    # Tạo dictionary chứa các tham số
     params = {}
     if display_name:
         params["dn"] = display_name
-
-    # Thêm tracker (tr) nếu có
     if tracker:
         params["tr"] = tracker
+    if file_size is not None:
+        params["xl"] = file_size
 
     # Ghép các tham số vào URL
     query_string = urlencode(params)
-    
     return base + "&" + query_string if query_string else base
 
 # ===============================================================================================
@@ -366,7 +389,7 @@ def upload_file_to_local():
     }
     save_file_info(file_info)
 
-    magnet = create_magnet_uri(info_hash_magnet,name_file,TRACKER_ADDRESS)
+    magnet = create_magnet_uri(info_hash_magnet,name_file,TRACKER_ADDRESS,size_file)
     magnet_list.append(magnet)
 
     # Cắt thành các piece và lưu dữ liệu từng piece
@@ -782,12 +805,13 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id, self_
     magnet_link = input("Enter magnet link of file want to download: ").strip()
 
     #Parse the magnet URI
-    info_hash, file_name, tracker_url = parse_magnet_uri(magnet_link)
+    info_hash, file_name, tracker_url, file_size = parse_magnet_uri(magnet_link)
 
     # Print extracted information
     print("Extracted Info:")
     print(f"Info Hash: {info_hash}")
     print(f"File Name: {file_name}")
+    print(f"File Size: {file_size}")
     print(f"Tracker URL: {tracker_url}")
 
     #  2. Peer gửi yêu cầu lấy danh sách peer đang chia sẻ file dựa vào info_hash trong magnet link
@@ -799,7 +823,8 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id, self_
     for peer in peer_list_info_hash:
         print(f"Peer ID: {peer['peer_id']}, IP: {peer['ip']}, Port: {peer['port']}")
 
-    # 3. Peer multi kết nối với peer khác trong danh sách và yêu cầu tải piece
+    # 3. Peer multi kết nối với peer khác trong danh sách và yêu cầu lấy danh sách những piece nó có
+
 
     pass
 

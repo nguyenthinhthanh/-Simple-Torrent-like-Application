@@ -17,20 +17,37 @@ def set_tracker_address(hostip, port):
 
 # Function to parse a magnet URI
 def parse_magnet_uri(magnet_link):
-    # Parse the magnet link
+    """
+    Phân tích magnet URI và trả về các thông tin:
+      - info_hash: mã hash của file
+      - display_name: tên file (nếu có, mặc định là "Unknown")
+      - tracker_url: URL của tracker (nếu có)
+      - file_size: kích thước file (xl) theo byte (nếu có, dưới dạng int, nếu không có thì None)
+    """
     parsed = urlparse(magnet_link)
     params = parse_qs(parsed.query)
     
-    # Extract info hash
-    info_hash = params.get('xt')[0].split(":")[-1]
+    # Trích xuất info_hash từ xt
+    xt_values = params.get('xt', [])
+    if xt_values:
+        info_hash = xt_values[0].split(":")[-1]
+    else:
+        info_hash = ""
     
-    # Extract display name (optional)
+    # Trích xuất display name (dn)
     display_name = params.get('dn', ['Unknown'])[0]
     
-    # Extract tracker URL (optional)
+    # Trích xuất tracker URL (tr)
     tracker_url = params.get('tr', [''])[0]
     
-    return info_hash, display_name, tracker_url
+    # Trích xuất file size (xl)
+    xl_value = params.get('xl', [None])[0]
+    try:
+        file_size = int(xl_value) if xl_value is not None else None
+    except ValueError:
+        file_size = None
+    
+    return info_hash, display_name, tracker_url, file_size
 
 
 # ===============================================================================================
@@ -86,7 +103,7 @@ def handle_peer_request(conn, addr):
             info_hash_list = []
             for magnet in magnet_list:
                 #print(f"Magnet {magnet}")
-                info_hash, display_name, tracker_url = parse_magnet_uri(magnet)
+                info_hash, display_name, tracker_url, file_size = parse_magnet_uri(magnet)
                 info_hash_list.append(info_hash)
                 # online_file.append({display_name,magnet})
                 new_entry = {"display_name": display_name, "magnet": magnet}
