@@ -172,7 +172,7 @@ def handle_peer_request(conn, addr):
             filtered_peers = []
             for p in peer_list:
                 # Kiểm tra nếu info_hash yêu cầu có nằm trong list info_hash của p
-                if info_hash in p["info_hash"]:
+                if info_hash in p["info_hash"] and p["peer_id"] != peer_id:
                     filtered_peers.append({
                         "peer_id": p["peer_id"],
                         "port": p["port"],
