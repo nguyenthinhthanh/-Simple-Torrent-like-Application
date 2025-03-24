@@ -62,9 +62,11 @@ def create_magnet_uri(info_hash, display_name="Unknown", tracker=None):
 #magnet_link = "magnet:?xt=urn:btih:1234567890abcdef1234567890abcdef12345678&dn=examplefile.txt&tr=http://tracker.example.com/announce"
 
 info_hash_raw = "abcdef1234567890abcdef1234567890abcdef12"
-display_name_raw = "example_file"
+display_name_raw = "example_file.txt"
 tracker_raw = "http://tracker.example.com/announce"
-magnet_link = create_magnet_uri(info_hash_raw, display_name_raw, tracker_raw)
+magnet_link_create = create_magnet_uri(info_hash_raw, display_name_raw, tracker_raw)
+print(magnet_link_create)
+magnet_link = input("Nhập magnet link của file cần tải: ").strip()
 print(f"Magnet {magnet_link}")
 
 # Step 1: Parse the magnet URI

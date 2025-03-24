@@ -66,21 +66,6 @@ MSG_PIECE = 7
 
 event = threading.Event()  # Create an event to sync thread
 
-# New peer connect to tracker
-def new_server_incoming(addr, conn):
-    print(addr)
-    while True:
-        try:
-            # This command receives data from the client (up to 1024 bytes at a time).
-            # conn.recv(1024) is blocking → Server will wait until it receives data from the client.
-            """
-            Need to do here handle communication between tracker and peer
-            """
-            data = conn.recv(1024)
-        except Exception:
-            print('Error occured!')
-            break
-
 # Try to connect google dns for get ip value of server
 def get_host_default_interface_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -93,8 +78,29 @@ def get_host_default_interface_ip():
         s.close()
     return ip
 
+def handle_peer_to_peer_communication(addr, conn, hostid):
+    handle_get_piece_list_request_from_peer_client(conn)
+
+    handle_download_request_from_peer_client(conn,hostid)
+
+# New peer connect to tracker
+def new_server_incoming(addr, conn, hostid):
+    print(addr)
+    while True:
+        try:
+            # This command receives data from the client (up to 1024 bytes at a time).
+            # conn.recv(1024) is blocking → Server will wait until it receives data from the client.
+            """
+            Need to do here handle communication between peer server and peer client
+            """
+            handle_peer_to_peer_communication(addr,conn,hostid)
+            
+        except Exception:
+            print('Error occured!')
+            break
+
 # Server wait for peer connect
-def thread_server(hostip, port):
+def thread_server(hostip, port, hostid):
     serversocket = socket.socket()                                  # Creat socket server using TCP/IP protocol
     serversocket.bind((hostip, port))                               # Assign socket with host ip and port
 
@@ -109,7 +115,7 @@ def thread_server(hostip, port):
         # When a client connects, the server creates a new socket (conn) to communicate with that client.
         # addr will contain the client's IP address and port information.
         conn, addr = serversocket.accept()
-        nconn = Thread(target=new_server_incoming, args=(addr, conn))
+        nconn = Thread(target=new_server_incoming, args=(addr, conn, hostid))
         nconn.start()                                               # Activate the thread
 
 
@@ -166,7 +172,7 @@ def thread_client(id, serverip, serverport, peerip, peerport):
             info_hash_test = "60194213e559cd3409ef8fcb57ed37592e472819"
             get_peer_list(client_socket,serverip,serverport,id,info_hash_test)
         elif command == "5":
-            function5()
+            download_file()
         elif command == "6":
             sys.exit()
         else:
@@ -236,6 +242,23 @@ def print_file_info(file_info):
         f"info_hash({file_info['info_hash']}) - {file_info['size']} bytes - {file_info['piece_count']} piece(s) - {file_info['name']}"
     )
 
+# Function to parse a magnet URI
+def parse_magnet_uri(magnet_link):
+    # Parse the magnet link
+    parsed = urlparse(magnet_link)
+    params = parse_qs(parsed.query)
+    
+    # Extract info hash
+    info_hash = params.get('xt')[0].split(":")[-1]
+    
+    # Extract display name (optional)
+    display_name = params.get('dn', ['Unknown'])[0]
+    
+    # Extract tracker URL (optional)
+    tracker_url = params.get('tr', [''])[0]
+    
+    return info_hash, display_name, tracker_url
+
 def create_magnet_uri(info_hash, display_name="Unknown", tracker=None):
     base = f"magnet:?xt=urn:btih:{info_hash}"
     
@@ -252,7 +275,6 @@ def create_magnet_uri(info_hash, display_name="Unknown", tracker=None):
     query_string = urlencode(params)
     
     return base + "&" + query_string if query_string else base
-
 
 # ===============================================================================================
 # ============== HELPER FUNCTION FOR FUNCTION 1 =================================================
@@ -413,9 +435,33 @@ def get_list_shared_files(client_socket, tracker_host, tracker_port, peer_id):
         
 
 # ===============================================================================================
-# ============== HELPER FUNCTION FOR FUNCTION 5 =======================================================
+# ============== HELPER FUNCTION FOR FUNCTION 5 =================================================
 # ===============================================================================================
 
+#  --- Hàm phân tích respone peer list từ tracker ---
+def extract_filtered_peers(response_body):
+    """
+    Trích xuất danh sách peers chia sẻ file info_hash từ phản hồi của Tracker.
+    - response_body: chuỗi phản hồi HTTP từ Tracker.
+    - Trả về danh sách peers (list of dict).
+    """
+    try:
+        # Tìm vị trí phần JSON bắt đầu (sau 'Peer list:')
+        start_idx = response_body.find("Peer list:") + len("Peer list:")
+        json_data = response_body[start_idx:].strip()
+
+        # Phân tích JSON thành dictionary Python
+        response_dict = json.loads(json_data)
+
+        # Trích xuất danh sách filtered_peers từ key "peers"
+        peers = response_dict.get("peers", [])
+
+        return peers
+    except Exception as e:
+        print(f"Lỗi khi phân tích phản hồi: {e}")
+        return []
+
+# function 4: get_peer_list
 #  --- Hàm peer yêu cầu tracker trả về danh sách peer đang chia sẻ file có info_hash ---
 def get_peer_list(client_socket, tracker_host, tracker_port, peer_id, info_hash):
     """
@@ -441,6 +487,8 @@ def get_peer_list(client_socket, tracker_host, tracker_port, peer_id, info_hash)
     response = client_socket.recv(4096).decode()
     print(f"Phản hồi peer list từ Tracker:\n{response}")
 
+    return response
+
 # --- Hàm tải dữ liệu piece từ file ---
 def load_piece_data(piece_name):
     """Đọc dữ liệu của piece từ file"""
@@ -452,7 +500,7 @@ def load_piece_data(piece_name):
         return f.read()
 
 # --- PHẦN PEER THREAD PEER: YÊU CẦU TẢI PIECE CỦA PEER CLIENT ---
-def download_piece_from_peer_client(peer_ip, peer_port, info_hash, client_peer_id,
+def download_piece_from_peer_server(peer_ip, peer_port, info_hash, client_peer_id,
                                piece_index, begin, piece_size): 
     """
     Client kết nối tới peer khác và tải một block (một phần của piece) theo giao thức Peer Wire.
@@ -570,7 +618,7 @@ def download_piece_from_peer_client(peer_ip, peer_port, info_hash, client_peer_i
 # --- PHẦN PEER THREAD SERVER: PHẢN HỒI YÊU CẦU TẢI PIECE CỦA PEER CLIENT ---
 def handle_download_request_from_peer_client(client_socket, server_peer_id):
     """
-    Hàm xử lý kết nối từ một client (peer khác yêu cầu block).
+    Hàm xử lý kết nối từ một client (peer khác yêu cầu piece).
     Thực hiện:
       1. Nhận handshake, kiểm tra info_hash.
       2. Gửi handshake phản hồi.
@@ -673,27 +721,87 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id):
     finally:
         client_socket.close()
 
+# --- PHẦN PEER THREAD PEER: YÊU CẦU DANH SÁCH PIECE MÀ PEER SERVER CÓ ---
+def get_piece_list_from_peer_server(client_socket, peer_server_host, peer_server_port, peer_id, peer_port, info_hash):
+    """
+    Hàm xử gửi yêu cầu đến peer khác lấy piece list.
+    Thực hiện:
+      1. Gửi message yêu cầu
+      2. Nhận piece list
+
+    Tham số:
+      - client_socket: socket peer client kết nối với peer server.
+      - peer_server_host: ip của peer server cung cấp piece chia sẻ.
+      - peer_server_port: port của peer server cung cấp piece chia sẻ.
+      - peer_id, peer_port: ip, port của client peer
+      - info_hash: 20-byte hash torrent (bytes).
+    """
+
+    pass
+
+# --- PHẦN PEER THREAD SERVER: PHẢN HỒI YÊU CẦU DANH SÁCH PIECE ---
+def handle_get_piece_list_request_from_peer_client(client_socket):
+    """
+    Hàm xử lý khi peer khác yêu cầu piece list.
+    Thực hiện:
+      1. Nhận message yêu cầu
+      2. Kiểm tra info hash để chỉ trả về những piece của file info_hash đó
+      3. Gửi message phản hồi.
+
+    Tham số:
+      - client_socket: socket peer client kết nối với peer server.
+    """
+
+    pass
+
 # ===============================================================================================
 # ============== PEER TO PEER FUNCTION ==========================================================
 # ===============================================================================================
 
 # Function 5: Peer downloading file from multi peer
+def download_file(client_socket, tracker_host, tracker_port, self_peer_id, self_peer_port):
+    """
+    Hàm thực hiện tải file yêu cầu từ peer đến peer khác
+    Thực hiện:
+        1. Người dùng nhập vào magnet link để tải file
+        2. Peer gửi yêu cầu lấy danh sách peer đang chia sẻ file dựa vào info_hash trong magnet link
+        3. Peer multi kết nối với peer khác trong danh sách và yêu cầu lấy danh sách những piece nó có
+        4. Tải piece và kiểm tra Hash để chắc piece tải đúng
+        5. Ghép file hoàn chỉnh
+        6. Xuất file
+        7. Seeder
+    Tham số:
+        - client_socket: socket kết nối với tracker.
+        - tracker_host: địa chỉ ip của tracker
+        - tracker_port: port giao tiếp với tracker
+        - self_peer_id: id của peer yêu cầu tải file
+        - self_peer_port: port của peer yêu cầu tải file
+    """
 
-def function2():
-    print("Function 2 do")
-    return
+    # 1. Người dùng nhập vào magnet link để tải file
+    magnet_link = input("Enter magnet link of file want to download: ").strip()
 
-def function3():
-    print("Function 3 do")
-    return
+    #Parse the magnet URI
+    info_hash, file_name, tracker_url = parse_magnet_uri(magnet_link)
 
-def function4():
-    print("Function 4 do")
-    return
+    # Print extracted information
+    print("Extracted Info:")
+    print(f"Info Hash: {info_hash}")
+    print(f"File Name: {file_name}")
+    print(f"Tracker URL: {tracker_url}")
 
-def function5():
-    print("Function 5 do")
-    return
+    #  2. Peer gửi yêu cầu lấy danh sách peer đang chia sẻ file dựa vào info_hash trong magnet link
+    response_body = get_peer_list(client_socket,tracker_host,tracker_port,self_peer_id,info_hash)
+    peer_list_info_hash = extract_filtered_peers(response_body)
+
+    # In kết quả peer list
+    print(f"Danh sách peer list {info_hash} từ phản hồi Tracker:")
+    for peer in peer_list_info_hash:
+        print(f"Peer ID: {peer['peer_id']}, IP: {peer['ip']}, Port: {peer['port']}")
+
+    # 3. Peer multi kết nối với peer khác trong danh sách và yêu cầu tải piece
+
+    pass
 
 # ===============================================================================================
 # =========================== UX/UI =============================================================
@@ -704,8 +812,8 @@ def print_gui():
     print("1 - Add a file want to share")
     print("2 - Peer register with tracker")
     print("3 - Get online file list")
-    print("4 - function 4")
-    print("5 - function 5")
+    print("4 - Get peer list, just for test")
+    print("5 - Download file")
     print("6 - Exit")
     print("Enter the function number: ")
 
@@ -735,7 +843,7 @@ if __name__ == "__main__":
     peerip = get_host_default_interface_ip()
     peerport = 33357
 
-    tserver = Thread(target=thread_server, args=(peerip,peerport))
+    tserver = Thread(target=thread_server, args=(peerip,peerport,peerid))
     tclient = Thread(target=thread_client, args=(peerid,serverip,serverport,peerip,peerport))
     #tagent = Thread(target=thread_agent, args=(2, agentpath))
 
