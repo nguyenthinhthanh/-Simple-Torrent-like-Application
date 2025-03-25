@@ -84,7 +84,9 @@ def get_host_default_interface_ip():
 def handle_peer_to_peer_communication(addr, conn, hostid):
     # handle_get_piece_list_request_from_peer_client(conn,hostid)
 
-    handle_download_request_from_peer_client(conn,hostid)
+    result = handle_download_request_from_peer_client(conn,hostid)
+
+    return result
 
 # New peer connect to tracker
 def new_server_incoming(addr, conn, hostid):
@@ -99,7 +101,9 @@ def new_server_incoming(addr, conn, hostid):
             """
             Need to do here handle communication between peer server and peer client
             """
-            handle_peer_to_peer_communication(addr,conn,hostid)
+            result = handle_peer_to_peer_communication(addr,conn,hostid)
+            if(result == False):
+               break
 
         except Exception:
             print('Error occured!')
@@ -808,9 +812,12 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id):
                 break
             else:
                 raise Exception("Message không được xử lý: không phải Interested hoặc Request")
+            
+        return True
         
     except Exception as e:
         print("Lỗi xử lý yêu cầu tải piece từ client download piece:", e)
+        return False
     # finally:
     #     client_socket.close()
 
