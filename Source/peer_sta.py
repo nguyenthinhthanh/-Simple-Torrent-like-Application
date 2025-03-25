@@ -1,5 +1,6 @@
 import os
 import sys
+import ast
 import time
 import json
 import mmap
@@ -483,10 +484,11 @@ def extract_filtered_peers(response_body):
     try:
         # Tìm vị trí phần JSON bắt đầu (sau 'Peer list:')
         start_idx = response_body.find("Peer list:") + len("Peer list:")
-        json_data = response_body[start_idx:].strip()
-
-        # Phân tích JSON thành dictionary Python
-        response_dict = json.loads(json_data)
+        # Lấy phần dữ liệu chứa dict sau "Peer list:" cho đến hết dòng
+        dict_str = response_body[start_idx:].split("\n", 1)[0].strip()
+        
+        # Dùng ast.literal_eval để chuyển đổi chuỗi thành đối tượng Python
+        response_dict = ast.literal_eval(dict_str)
 
         # Trích xuất danh sách filtered_peers từ key "peers"
         peers = response_dict.get("peers", [])
