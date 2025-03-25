@@ -237,6 +237,7 @@ def save_file_info(file_info):
 
 def load_file_info(info_hash):
     filename = f"data/files_info/{info_hash}.json"
+    #print(f"File name info {filename}")
     try:
         with open(filename, "r") as file:
             file_info = json.load(file)
@@ -922,6 +923,8 @@ def handle_get_piece_list_request_from_peer_client(client_socket, server_peer_id
         # Kiểm tra info_hash (nằm sau 1 + pstrlen + 8 byte)
         offset = 1 + PSTRLEN + 8
         client_info_hash = handshake[offset:offset+20]
+        # Chuyển bytes thành chuỗi hex
+        info_hash_str = client_info_hash.hex()
         client_peer_id = handshake[1 + PSTRLEN + 8 + 20:]  # 20 byte cuối là peer_id
 
         # --- Gửi handshake phản hồi ---
@@ -931,11 +934,11 @@ def handle_get_piece_list_request_from_peer_client(client_socket, server_peer_id
 
         # --- Gửi Bitfield ---
         # message Bitfield theo định dạng: <length prefix (4 byte)> <message id (1 byte = 5)> <bitfield payload>
-        file_info = load_file_info(client_info_hash)
+        file_info = load_file_info(info_hash_str)
         if file_info:
             total_pieces = file_info.get("piece_count")  # Lấy giá trị piece_count
 
-        bitfield = create_bitfield(client_info_hash, total_pieces, pieces_dir="data/pieces_data")
+        bitfield = create_bitfield(info_hash_str, total_pieces, pieces_dir="data/pieces_data")
 
         msg_id = MSG_BITFIELD
         payload = struct.pack("!B", msg_id) + bitfield
