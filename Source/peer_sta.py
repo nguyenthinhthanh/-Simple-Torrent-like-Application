@@ -1026,7 +1026,9 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
     total_pieces = (file_size // PIECE_SIZE) + 1
 
     #  2. Peer gửi yêu cầu lấy danh sách peer đang chia sẻ file dựa vào info_hash trong magnet link
-    response_body = get_peer_list(client_socket,tracker_host,tracker_port,self_peer_id,info_hash)
+    # Tách header và body dựa trên chuỗi phân cách "\r\n\r\n"
+    response = get_peer_list(client_socket,tracker_host,tracker_port,self_peer_id,info_hash)
+    header, response_body = response.split("\r\n\r\n", 1)
     peer_list_info_hash = extract_filtered_peers(response_body)
 
     # In kết quả peer list
