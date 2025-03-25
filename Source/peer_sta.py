@@ -3,6 +3,7 @@ import sys
 import time
 import json
 import mmap
+import math
 import socket
 import struct
 import random
@@ -80,7 +81,7 @@ def get_host_default_interface_ip():
     return ip
 
 def handle_peer_to_peer_communication(addr, conn, hostid):
-    handle_get_piece_list_request_from_peer_client(conn)
+    handle_get_piece_list_request_from_peer_client(conn,hostid)
 
     handle_download_request_from_peer_client(conn,hostid)
 
@@ -232,6 +233,16 @@ def save_file_info(file_info):
     file = open(f"data/files_info/{file_info['info_hash']}.json", "w")
     file.write(json.dumps(file_info))
     file.close()
+
+def load_file_info(info_hash):
+    filename = f"data/files_info/{info_hash}.json"
+    try:
+        with open(filename, "r") as file:
+            file_info = json.load(file)
+            return file_info  # Trả về toàn bộ dictionary file_info
+    except FileNotFoundError:
+        print("Không tìm thấy file info!")
+        return None
 
 def save_piece_data(piece_name, piece_data):
     fs = open(f"data/pieces_data/{piece_name}", "wb")
@@ -522,6 +533,52 @@ def load_piece_data(piece_name):
         return None
     with open(file_path, "rb") as f:
         return f.read()
+    
+def create_bitfield(info_hash, total_pieces, pieces_dir="/data/pieces_data/"):
+    """
+    Tạo bitfield cho torrent dựa vào các file piece có trong thư mục pieces_dir.
+    
+    Tham số:
+      - info_hash: chuỗi (str) đại diện cho info_hash của torrent.
+      - total_pieces: tổng số pieces của torrent (int).
+      - pieces_dir: thư mục chứa file piece (mặc định là "/data/pieces_data/").
+    
+    Trả về:
+      - bitfield dưới dạng bytes, với mỗi bit biểu diễn tình trạng của piece tương ứng.
+    """
+    # Tạo danh sách chứa chỉ số của các piece hiện có
+    available_pieces = set()
+    
+    try:
+        files = os.listdir(pieces_dir)
+    except Exception as e:
+        raise Exception(f"Không truy cập được thư mục {pieces_dir}: {e}")
+    
+    # Duyệt qua các file trong thư mục
+    for filename in files:
+        # Kiểm tra file có bắt đầu bằng info_hash + "_" không
+        if filename.startswith(info_hash + "_"):
+            try:
+                # Phần sau dấu gạch dưới chính là piece index
+                piece_index_str = filename.split("_", 1)[1]
+                piece_index = int(piece_index_str)
+                available_pieces.add(piece_index)
+            except Exception as e:
+                # Nếu không chuyển đổi được, bỏ qua file đó
+                continue
+
+    # Tính số byte cần cho bitfield
+    bitfield_length = math.ceil(total_pieces / 8)
+    bitfield_array = bytearray(bitfield_length)
+    
+    # Đặt bit = 1 nếu piece i có trong available_pieces
+    for i in range(total_pieces):
+        if i in available_pieces:
+            byte_index = i // 8
+            bit_index = 7 - (i % 8)  # Dùng thứ tự từ MSB đến LSB
+            bitfield_array[byte_index] |= (1 << bit_index)
+    
+    return bytes(bitfield_array)
 
 # --- PHẦN PEER THREAD PEER: YÊU CẦU TẢI PIECE CỦA PEER CLIENT ---
 def download_piece_from_peer_server(client_socket, info_hash, client_peer_id,
@@ -661,7 +718,7 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id):
     """
 
     try:
-         # --- Nhận handshake từ client ---
+        # --- Nhận handshake từ client ---
         handshake = client_socket.recv(HANDSHAKE_LEN)
         if len(handshake) < HANDSHAKE_LEN:
             raise Exception("Handshake không đủ dữ liệu")
@@ -750,7 +807,7 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id):
         client_socket.close()
 
 # --- PHẦN PEER THREAD PEER: YÊU CẦU DANH SÁCH PIECE MÀ PEER SERVER CÓ ---
-def get_piece_list_from_peer_server(client_socket, peer_server_host, peer_server_port, peer_id, info_hash):
+def get_piece_list_from_peer_server(client_socket, peer_server_host, peer_server_port, peer_id, info_hash, total_pieces):
     """
     Hàm xử gửi yêu cầu đến peer khác lấy piece list.
     Thực hiện:
@@ -763,12 +820,85 @@ def get_piece_list_from_peer_server(client_socket, peer_server_host, peer_server
       - peer_server_port: port của peer server cung cấp piece chia sẻ.
       - peer_id, peer_port: ip, port của client peer
       - info_hash: 20-byte hash torrent (bytes).
-    """
 
-    pass
+    Trả về:
+      - Một danh sách các chỉ số piece mà peer có (ví dụ: [0, 1, 3, 5, ...]).
+        Nếu không nhận được bitfield, trả về danh sách rỗng.
+    """
+    try: 
+        # --- Step 1: Handshake ---
+        # Tạo handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
+        handshake = struct.pack("!B", PSTRLEN) + PSTR.encode() + RESERVED + info_hash + peer_id
+        client_socket.sendall(handshake)
+
+        # Nhận handshake phản hồi
+        handshake_resp = client_socket.recv(HANDSHAKE_LEN)
+        if len(handshake_resp) < HANDSHAKE_LEN:
+            client_socket.close()
+            raise Exception("Handshake không thành công: không nhận đủ dữ liệu")
+        
+        # Kiểm tra info_hash (nằm sau 1+pstrlen+8 byte)
+        offset = 1 + PSTRLEN + 8
+        if handshake_resp[offset:offset+20] != info_hash:
+            client_socket.close()
+            raise Exception("Info hash không khớp trong handshake")
+        
+        # --- Step 2: Nhận Bitfield ---
+        # Bitfield message có định dạng:
+        # <length prefix (4 byte)> <message id (1 byte = 5)> <bitfield payload>
+        raw_len = client_socket.recv(4)
+        if len(raw_len) < 4:
+            client_socket.close()
+            raise Exception("Không nhận đủ length prefix cho message")
+        msg_len = struct.unpack("!I", raw_len)[0]
+
+        # Nếu msg_len == 0, đó là keep-alive, ta cần chờ message khác
+        while msg_len == 0:
+            raw_len = client_socket.recv(4)
+            if len(raw_len) < 4:
+                client_socket.close()
+                raise Exception("Không nhận đủ length prefix cho message")
+            msg_len = struct.unpack("!I", raw_len)[0]
+
+        msg = b""
+        while len(msg) < msg_len:
+            chunk = client_socket.recv(msg_len - len(msg))
+            if not chunk:
+                break
+            msg += chunk
+        if len(msg) < msg_len:
+            client_socket.close()
+            raise Exception("Không nhận đủ dữ liệu cho message")
+
+        # Kiểm tra message id
+        msg_id = msg[0]
+        if msg_id != MSG_BITFIELD:
+            # Nếu không phải bitfield, có thể là message khác (ví dụ "have")
+            # Trong trường hợp này, ta trả về danh sách rỗng hoặc có thể xử lý thêm
+            client_socket.close()
+            raise Exception(f"Đã mong đợi bitfield (id=5) nhưng nhận được id={msg_id}")
+
+        # Phần payload của bitfield: các byte sau 1 byte message id
+        bitfield = msg[1:]
+        # --- Step 3: Chuyển Bitfield thành danh sách các chỉ số piece ---
+        piece_list = []
+        bit_index = 0
+        for byte in bitfield:
+            for i in range(7, -1, -1):
+                if bit_index >= total_pieces:
+                    break
+                if (byte >> i) & 1:
+                    piece_list.append(bit_index)
+                bit_index += 1
+        # client_socket.close()
+        return piece_list
+    except Exception as e:
+        client_socket.close()
+        raise Exception("Lỗi khi lấy danh sách piece từ peer: " + str(e))
+
 
 # --- PHẦN PEER THREAD SERVER: PHẢN HỒI YÊU CẦU DANH SÁCH PIECE ---
-def handle_get_piece_list_request_from_peer_client(client_socket):
+def handle_get_piece_list_request_from_peer_client(client_socket, server_peer_id):
     """
     Hàm xử lý khi peer khác yêu cầu piece list.
     Thực hiện:
@@ -779,8 +909,41 @@ def handle_get_piece_list_request_from_peer_client(client_socket):
     Tham số:
       - client_socket: socket peer client kết nối với peer server.
     """
+    
+    try:
+        client_socket.settimeout(TIMEOUT)
 
-    pass
+        # --- Nhận handshake từ client ---
+        handshake = client_socket.recv(HANDSHAKE_LEN)
+        if len(handshake) < HANDSHAKE_LEN:
+            raise Exception("Handshake không đủ dữ liệu")
+        # Kiểm tra info_hash (nằm sau 1 + pstrlen + 8 byte)
+        offset = 1 + PSTRLEN + 8
+        client_info_hash = handshake[offset:offset+20]
+        client_peer_id = handshake[1 + PSTRLEN + 8 + 20:]  # 20 byte cuối là peer_id
+
+        # --- Gửi handshake phản hồi ---
+        # Sử dụng cùng info_hash và server_peer_id của server
+        response_handshake = struct.pack("!B", PSTRLEN) + PSTR.encode() + RESERVED + client_info_hash + server_peer_id
+        client_socket.sendall(response_handshake)
+
+        # --- Gửi Bitfield ---
+        # message Bitfield theo định dạng: <length prefix (4 byte)> <message id (1 byte = 5)> <bitfield payload>
+        file_info = load_file_info(client_info_hash)
+        if file_info:
+            total_pieces = file_info.get("piece_count")  # Lấy giá trị piece_count
+
+        bitfield = create_bitfield(client_info_hash, total_pieces, pieces_dir="/data/pieces_data/")
+
+        msg_id = MSG_BITFIELD
+        payload = struct.pack("!B", msg_id) + bitfield
+        length_prefix = struct.pack("!I", len(payload))
+        client_socket.sendall(length_prefix + payload)
+
+        print(f"[{server_peer_id}] Đã gửi bitfield cho {client_peer_id}.")
+    except Exception as e:
+        print("Lỗi xử lý yêu cầu tải piece từ client:", e)
+    
 
 # ===============================================================================================
 # ============== PEER TO PEER FUNCTION ==========================================================
@@ -792,13 +955,13 @@ request_queue = set()   # Tập các piece đang được yêu cầu
 lock = threading.Lock() # Để đồng bộ truy cập dữ liệu chia sẻ
 
 # thread download for download file function
-def download_worker(peer_server, peer_client_id, info_hash_file):
+def download_worker(peer_server, peer_client_id, info_hash_file, total_piece_file):
         # Tạo socket TCP và kết nối tới peer
         peer_to_peer_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         peer_to_peer_s.settimeout(TIMEOUT)
         peer_to_peer_s.connect((peer_server['ip'], peer_server['port']))
 
-        piece_list = get_piece_list_from_peer_server(peer_to_peer_s,peer_server['ip'], peer_server['port'], peer_client_id, info_hash_file)
+        piece_list = get_piece_list_from_peer_server(peer_to_peer_s,peer_server['ip'], peer_server['port'], peer_client_id, info_hash_file, total_piece_file)
 
         while True:
             with lock:
@@ -877,7 +1040,7 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
     for peer in peer_list_info_hash:
         if peer["peer_id"] == self_peer_id:
             continue
-        t = threading.Thread(target=download_worker, args=(peer, self_peer_id, info_hash))
+        t = threading.Thread(target=download_worker, args=(peer, self_peer_id, info_hash, total_pieces))
         t.start()
         threads.append(t)
 
