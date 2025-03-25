@@ -534,14 +534,14 @@ def load_piece_data(piece_name):
     with open(file_path, "rb") as f:
         return f.read()
     
-def create_bitfield(info_hash, total_pieces, pieces_dir="/data/pieces_data/"):
+def create_bitfield(info_hash, total_pieces, pieces_dir="data/pieces_data"):
     """
     Tạo bitfield cho torrent dựa vào các file piece có trong thư mục pieces_dir.
     
     Tham số:
       - info_hash: chuỗi (str) đại diện cho info_hash của torrent.
       - total_pieces: tổng số pieces của torrent (int).
-      - pieces_dir: thư mục chứa file piece (mặc định là "/data/pieces_data/").
+      - pieces_dir: thư mục chứa file piece (mặc định là "data/pieces_data").
     
     Trả về:
       - bitfield dưới dạng bytes, với mỗi bit biểu diễn tình trạng của piece tương ứng.
@@ -803,8 +803,8 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id):
         
     except Exception as e:
         print("Lỗi xử lý yêu cầu tải piece từ client:", e)
-    finally:
-        client_socket.close()
+    # finally:
+    #     client_socket.close()
 
 # --- PHẦN PEER THREAD PEER: YÊU CẦU DANH SÁCH PIECE MÀ PEER SERVER CÓ ---
 def get_piece_list_from_peer_server(client_socket, peer_server_host, peer_server_port, peer_id, info_hash, total_pieces):
@@ -933,7 +933,7 @@ def handle_get_piece_list_request_from_peer_client(client_socket, server_peer_id
         if file_info:
             total_pieces = file_info.get("piece_count")  # Lấy giá trị piece_count
 
-        bitfield = create_bitfield(client_info_hash, total_pieces, pieces_dir="/data/pieces_data/")
+        bitfield = create_bitfield(client_info_hash, total_pieces, pieces_dir="data/pieces_data")
 
         msg_id = MSG_BITFIELD
         payload = struct.pack("!B", msg_id) + bitfield
@@ -1052,9 +1052,17 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
         print("Tải file không thành công: chưa đủ pieces.")
         return None
 
-    # 5. Ghép file hoàn chỉnh
+    # 5. Ghép file hoàn chỉnh && # 6. Xuất file
+    export_dir = "data/export_files"
+    os.makedirs(export_dir, exist_ok=True)
 
-    # 6. Xuất file
+    # Đường dẫn đầy đủ của file
+    file_path = os.path.join("data/export_files", file_name)
+
+    # Ghi dữ liệu vào file
+    with open(file_path, "wb") as output_file:
+        for i in range(total_pieces):
+            output_file.write(downloaded_pieces[i])
 
     # 7. Seeder
 
