@@ -82,13 +82,16 @@ def get_host_default_interface_ip():
     return ip
 
 def handle_peer_to_peer_communication(addr, conn, hostid):
-    handle_get_piece_list_request_from_peer_client(conn,hostid)
+    # handle_get_piece_list_request_from_peer_client(conn,hostid)
 
     handle_download_request_from_peer_client(conn,hostid)
 
 # New peer connect to tracker
 def new_server_incoming(addr, conn, hostid):
     print(addr)
+
+    handle_get_piece_list_request_from_peer_client(conn,hostid)
+
     while True:
         try:
             # This command receives data from the client (up to 1024 bytes at a time).
@@ -97,7 +100,7 @@ def new_server_incoming(addr, conn, hostid):
             Need to do here handle communication between peer server and peer client
             """
             handle_peer_to_peer_communication(addr,conn,hostid)
-            
+
         except Exception:
             print('Error occured!')
             break
@@ -807,7 +810,7 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id):
                 raise Exception("Message không được xử lý: không phải Interested hoặc Request")
         
     except Exception as e:
-        print("Lỗi xử lý yêu cầu tải piece từ client:", e)
+        print("Lỗi xử lý yêu cầu tải piece từ client download piece:", e)
     # finally:
     #     client_socket.close()
 
@@ -949,7 +952,7 @@ def handle_get_piece_list_request_from_peer_client(client_socket, server_peer_id
 
         print(f"[{server_peer_id}] Đã gửi bitfield cho {client_peer_id}.")
     except Exception as e:
-        print("Lỗi xử lý yêu cầu tải piece từ client:", e)
+        print("Lỗi xử lý yêu cầu tải piece từ client get piece list:", e)
     
 
 # ===============================================================================================
@@ -989,6 +992,7 @@ def download_worker(peer_server, peer_client_id, info_hash_file, total_piece_fil
                 request_queue.remove(piece_index)
                 if piece_data:
                     downloaded_pieces[piece_index] = piece_data
+                    print(f"Tải thành công {piece_index}")
                 else:
                     print(f"[!] Không thể tải piece {piece_index}, sẽ thử lại từ peer khác.")
 
