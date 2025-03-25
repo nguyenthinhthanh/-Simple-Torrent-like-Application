@@ -985,6 +985,10 @@ def download_worker(peer_server, peer_client_id, info_hash_file, total_piece_fil
                 piece_index = remaining_pieces.pop()
                 request_queue.add(piece_index)
 
+            if peer_to_peer_s.fileno() == -1:
+                print(f"Socket đã đóng tại piece index {piece_index}")
+                break
+
             # Thực hiện tải piece từ peer
             piece_data = download_piece_from_peer_server(peer_to_peer_s,info_hash_file,peer_client_id,piece_index,0,PIECE_SIZE)
             
@@ -992,7 +996,7 @@ def download_worker(peer_server, peer_client_id, info_hash_file, total_piece_fil
                 request_queue.remove(piece_index)
                 if piece_data:
                     downloaded_pieces[piece_index] = piece_data
-                    print(f"Tải thành công {piece_index}")
+                    print(f"Tải thành công piece{piece_index}")
                 else:
                     print(f"[!] Không thể tải piece {piece_index}, sẽ thử lại từ peer khác.")
 
