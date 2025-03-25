@@ -830,7 +830,7 @@ def get_piece_list_from_peer_server(client_socket, peer_server_host, peer_server
     try: 
         # --- Step 1: Handshake ---
         # Tạo handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
-        handshake = struct.pack("!B", PSTRLEN) + PSTR.encode() + RESERVED + info_hash + peer_id
+        handshake = struct.pack("!B", PSTRLEN) + PSTR.encode() + RESERVED + info_hash + peer_id.encode()
         client_socket.sendall(handshake)
 
         # Nhận handshake phản hồi
@@ -1018,6 +1018,8 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
     #Parse the magnet URI
     info_hash, file_name, tracker_url, file_size = parse_magnet_uri(magnet_link)
 
+    info_hash_byte = bytes.fromhex(info_hash)
+
     # Print extracted information
     print("Extracted Info:")
     print(f"Info Hash: {info_hash}")
@@ -1044,7 +1046,7 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
     for peer in peer_list_info_hash:
         if peer["peer_id"] == self_peer_id:
             continue
-        t = threading.Thread(target=download_worker, args=(peer, self_peer_id, info_hash, total_pieces))
+        t = threading.Thread(target=download_worker, args=(peer, self_peer_id, info_hash_byte, total_pieces))
         t.start()
         threads.append(t)
 
