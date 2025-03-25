@@ -961,7 +961,7 @@ def download_worker(peer_server, peer_client_id, info_hash_file, total_piece_fil
         # Tạo socket TCP và kết nối tới peer
         peer_to_peer_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         peer_to_peer_s.settimeout(TIMEOUT)
-        peer_to_peer_s.connect((peer_server['ip'], peer_server['port']))
+        peer_to_peer_s.connect((peer_server['ip'], int(peer_server['port'])))
 
         piece_list = get_piece_list_from_peer_server(peer_to_peer_s,peer_server['ip'], peer_server['port'], peer_client_id, info_hash_file, total_piece_file)
 
