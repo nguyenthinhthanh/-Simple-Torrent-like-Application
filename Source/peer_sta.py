@@ -728,6 +728,8 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id):
         # Kiểm tra info_hash (nằm sau 1 + pstrlen + 8 byte)
         offset = 1 + PSTRLEN + 8
         client_info_hash = handshake[offset:offset+20]
+        # Chuyển bytes thành chuỗi hex
+        info_hash_str = client_info_hash.hex()
         client_peer_id = handshake[1 + PSTRLEN + 8 + 20:]  # 20 byte cuối là peer_id
 
         # --- Gửi handshake phản hồi ---
@@ -784,7 +786,7 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id):
                 print(f"Nhận request: piece {piece_index}, begin {begin}, length {req_block_length}")
 
                 # Đọc dữ liệu của piece từ file
-                piece_name = f"{client_info_hash}_{piece_index}"     # Thay "info_hash_" bằng hash thực tế
+                piece_name = f"{info_hash_str}_{piece_index}"     # Thay "info_hash_" bằng hash thực tế
                 piece_data = load_piece_data(piece_name)
 
                 if piece_data is None:
