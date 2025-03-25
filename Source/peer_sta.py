@@ -830,7 +830,7 @@ def get_piece_list_from_peer_server(client_socket, peer_server_host, peer_server
     try: 
         # --- Step 1: Handshake ---
         # Tạo handshake: <pstrlen><pstr><reserved><info_hash><peer_id>
-        handshake = struct.pack("!B", PSTRLEN) + PSTR.encode() + RESERVED + info_hash + peer_id.encode()
+        handshake = struct.pack("!B", PSTRLEN) + PSTR.encode() + RESERVED + info_hash + peer_id
         client_socket.sendall(handshake)
 
         # Nhận handshake phản hồi
@@ -913,7 +913,7 @@ def handle_get_piece_list_request_from_peer_client(client_socket, server_peer_id
     """
     
     try:
-        client_socket.settimeout(TIMEOUT)
+        #client_socket.settimeout(TIMEOUT)
 
         # --- Nhận handshake từ client ---
         handshake = client_socket.recv(HANDSHAKE_LEN)
@@ -960,7 +960,7 @@ lock = threading.Lock() # Để đồng bộ truy cập dữ liệu chia sẻ
 def download_worker(peer_server, peer_client_id, info_hash_file, total_piece_file):
         # Tạo socket TCP và kết nối tới peer
         peer_to_peer_s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        peer_to_peer_s.settimeout(TIMEOUT)
+        #peer_to_peer_s.settimeout(TIMEOUT)
         peer_to_peer_s.connect((peer_server['ip'], int(peer_server['port'])))
 
         piece_list = get_piece_list_from_peer_server(peer_to_peer_s,peer_server['ip'], peer_server['port'], peer_client_id, info_hash_file, total_piece_file)
