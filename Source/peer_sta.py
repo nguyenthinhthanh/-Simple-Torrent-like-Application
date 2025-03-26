@@ -703,7 +703,7 @@ def download_piece_from_peer_server(client_socket, info_hash, client_peer_id,
         if received_piece_index != piece_index or received_begin != begin:
             client_socket.close()
             raise Exception("Thông tin piece nhận không khớp với yêu cầu")
-        client_socket.close()
+        #client_socket.close()
     except Exception as e:
         client_socket.close()
         raise Exception("Lỗi khi tải piece từ peer: " + str(e))
@@ -1003,7 +1003,7 @@ def download_worker(peer_server, peer_client_id, info_hash_file, total_piece_fil
                 request_queue.remove(piece_index)
                 if piece_data:
                     downloaded_pieces[piece_index] = piece_data
-                    print(f"Tải thành công piece{piece_index}")
+                    print(f"Tải thành công piece {piece_index}")
                 else:
                     print(f"[!] Không thể tải piece {piece_index}, sẽ thử lại từ peer khác.")
 
