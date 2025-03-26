@@ -75,7 +75,7 @@ def handle_peer_request(conn, addr):
             response = "HTTP/1.1 405 Method Not Allowed\r\n\r\nMethod Not Allowed"
             conn.sendall(response.encode())
             #conn.close()
-            return
+            return False
 
         # Phân tích URL để lấy tham số query
         parsed_url = urlparse(path)
@@ -91,7 +91,7 @@ def handle_peer_request(conn, addr):
                 response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
                 conn.sendall(response.encode())
                 #conn.close()
-                return
+                return False
 
             # Lấy giá trị từ query
             magnet_list = params["magnet"] 
@@ -147,7 +147,7 @@ def handle_peer_request(conn, addr):
                 response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
                 conn.sendall(response.encode())
                 #conn.close()
-                return
+                return False
             
             peer_id = params["peer_id"][0]
 
@@ -178,7 +178,7 @@ def handle_peer_request(conn, addr):
                 response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
                 conn.sendall(response.encode())
                 #conn.close()
-                return
+                return False
             
             peer_id = params["peer_id"][0]
             info_hash = params["info_hash"][0]
@@ -223,10 +223,11 @@ def handle_peer_request(conn, addr):
             response = f"HTTP/1.1 400 Bad Request\r\nContent-Length: {len(response_body)}\r\n\r\n{response_body}"
             conn.sendall(response.encode())
             #conn.close()
-            return
+            return False
     
     except Exception as e:
         print(f"Lỗi xử lý peer {addr}: {e}")
+        return False
     
     finally:
         #conn.close()
@@ -244,7 +245,9 @@ def new_connection(addr, conn):
             Need to do here handle communication between tracker and peer
             """
             #data = conn.recv(1024)
-            handle_peer_request(conn, addr)
+            result = handle_peer_request(conn, addr)
+            if result== False:
+                break
 
         except Exception:
             print('Error occured!')

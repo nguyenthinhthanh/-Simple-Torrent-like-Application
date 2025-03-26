@@ -82,7 +82,7 @@ def get_host_default_interface_ip():
     return ip
 
 def handle_peer_to_peer_communication(addr, conn, hostid):
-    # handle_get_piece_list_request_from_peer_client(conn,hostid)
+    handle_get_piece_list_request_from_peer_client(conn,hostid)
 
     result = handle_download_request_from_peer_client(conn,hostid)
 
@@ -92,22 +92,32 @@ def handle_peer_to_peer_communication(addr, conn, hostid):
 def new_server_incoming(addr, conn, hostid):
     print(addr)
 
-    handle_get_piece_list_request_from_peer_client(conn,hostid)
+    # handle_get_piece_list_request_from_peer_client(conn,hostid)
 
-    while True:
-        try:
-            # This command receives data from the client (up to 1024 bytes at a time).
-            # conn.recv(1024) is blocking → Server will wait until it receives data from the client.
-            """
-            Need to do here handle communication between peer server and peer client
-            """
-            result = handle_peer_to_peer_communication(addr,conn,hostid)
-            if(result == False):
-               break
+    # while True:
+    #     try:
+    #         # This command receives data from the client (up to 1024 bytes at a time).
+    #         # conn.recv(1024) is blocking → Server will wait until it receives data from the client.
+    #         """
+    #         Need to do here handle communication between peer server and peer client
+    #         """
+    #         result = handle_peer_to_peer_communication(addr,conn,hostid)
+    #         if(result == False):
+    #            break
 
-        except Exception:
-            print('Error occured!')
-            break
+    #     except Exception:
+    #         print('Error occured!')
+    #         break
+
+    try:
+        # This command receives data from the client (up to 1024 bytes at a time).
+        # conn.recv(1024) is blocking → Server will wait until it receives data from the client.
+        """
+        Need to do here handle communication between peer server and peer client
+        """
+        handle_peer_to_peer_communication(addr,conn,hostid)
+    except Exception:
+        print('Error occured!')
 
 # Server wait for peer connect
 def thread_server(hostip, port, hostid):
@@ -1007,6 +1017,8 @@ def download_worker(peer_server, peer_client_id, info_hash_file, total_piece_fil
                 else:
                     print(f"[!] Không thể tải piece {piece_index}, sẽ thử lại từ peer khác.")
 
+        peer_to_peer_s.close()
+
 # Function 5: Peer downloading file from multi peer
 def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
     """
@@ -1077,6 +1089,8 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
     if len(downloaded_pieces) < total_pieces:
         print("Tải file không thành công: chưa đủ pieces.")
         return None
+    else:
+        print(f"Tải file {file_name} thành công")
 
     # 5. Ghép file hoàn chỉnh && # 6. Xuất file
     export_dir = "data/export_files"
