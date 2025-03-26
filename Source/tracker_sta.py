@@ -58,7 +58,7 @@ def parse_magnet_uri(magnet_link):
 peer_list = []
 online_file = []
 # Tạo set để lưu trữ các phần tử đã tồn tại
-existing_entries = set((entry["display_name"], entry["magnet"]) for entry in online_file)
+# existing_entries = set((entry["display_name"], entry["magnet"]) for entry in online_file)
 
 def handle_peer_request(conn, addr):
     """
@@ -109,9 +109,8 @@ def handle_peer_request(conn, addr):
                 info_hash_list.append(info_hash)
                 # online_file.append({display_name,magnet})
                 new_entry = {"display_name": display_name, "magnet": magnet}
-                if new_entry not in existing_entries:
-                    online_file.append({"display_name": display_name, "magnet": magnet})
-                    existing_entries.add(new_entry)
+                if new_entry not in online_file:
+                    online_file.append(new_entry)
 
             # Lưu thông tin Peer cho từng info_hash
             peer_list.append({

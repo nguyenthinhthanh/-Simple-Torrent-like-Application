@@ -436,8 +436,12 @@ def register_with_tracker(client_socket, tracker_host, tracker_port, magnet, pee
     # Xây dựng URL query
     # Mã hóa magnet để đảm bảo chuỗi query không bị lỗi
     # Mã hóa từng magnet URI
-    magnet_list_encoded = [urllib.parse.quote(m, safe='') for m in magnet]
-    query = f"magnet={magnet_list_encoded}&peer_id={peer_id}&port={port}&uploaded=0&downloaded=0&left=0&event=started"
+    # magnet_list_encoded = [urllib.parse.quote(m, safe='') for m in magnet]
+    # query = f"magnet={magnet_list_encoded}&peer_id={peer_id}&port={port}&uploaded=0&downloaded=0&left=0&event=started"
+
+    magnet_params = "&".join([f"magnet={urllib.parse.quote(m)}" for m in magnet])
+    query = f"{magnet_params}&peer_id={peer_id}&port={port}&uploaded=0&downloaded=0&left=0&event=started"
+
     request = f"GET /announce?{query} HTTP/1.1\r\nHost: {tracker_host}\r\nConnection: close\r\n\r\n"
 
     # Gửi request đến Tracker qua socket
