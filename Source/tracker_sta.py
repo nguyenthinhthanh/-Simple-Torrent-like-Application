@@ -224,14 +224,16 @@ def handle_peer_request(conn, addr):
             conn.sendall(response.encode())
             #conn.close()
             return False
+        
+        return True
     
     except Exception as e:
         print(f"Lỗi xử lý peer {addr}: {e}")
         return False
     
-    finally:
-        #conn.close()
-        return True
+    # finally:
+    #     #conn.close()
+    #     return True
 
 # New peer connect to tracker
 def new_connection(addr, conn):
@@ -246,7 +248,7 @@ def new_connection(addr, conn):
             """
             #data = conn.recv(1024)
             result = handle_peer_request(conn, addr)
-            if result== False:
+            if result == False:
                 break
 
         except Exception:

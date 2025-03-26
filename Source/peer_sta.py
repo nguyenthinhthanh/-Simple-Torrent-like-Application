@@ -82,7 +82,7 @@ def get_host_default_interface_ip():
     return ip
 
 def handle_peer_to_peer_communication(addr, conn, hostid):
-    handle_get_piece_list_request_from_peer_client(conn,hostid)
+    # handle_get_piece_list_request_from_peer_client(conn,hostid)
 
     result = handle_download_request_from_peer_client(conn,hostid)
 
@@ -92,32 +92,22 @@ def handle_peer_to_peer_communication(addr, conn, hostid):
 def new_server_incoming(addr, conn, hostid):
     print(addr)
 
-    # handle_get_piece_list_request_from_peer_client(conn,hostid)
+    handle_get_piece_list_request_from_peer_client(conn,hostid)
 
-    # while True:
-    #     try:
-    #         # This command receives data from the client (up to 1024 bytes at a time).
-    #         # conn.recv(1024) is blocking → Server will wait until it receives data from the client.
-    #         """
-    #         Need to do here handle communication between peer server and peer client
-    #         """
-    #         result = handle_peer_to_peer_communication(addr,conn,hostid)
-    #         if(result == False):
-    #            break
+    while True:
+        try:
+            # This command receives data from the client (up to 1024 bytes at a time).
+            # conn.recv(1024) is blocking → Server will wait until it receives data from the client.
+            """
+            Need to do here handle communication between peer server and peer client
+            """
+            result = handle_download_request_from_peer_client(conn,hostid)
+            if(result == False):
+               break
 
-    #     except Exception:
-    #         print('Error occured!')
-    #         break
-
-    try:
-        # This command receives data from the client (up to 1024 bytes at a time).
-        # conn.recv(1024) is blocking → Server will wait until it receives data from the client.
-        """
-        Need to do here handle communication between peer server and peer client
-        """
-        handle_peer_to_peer_communication(addr,conn,hostid)
-    except Exception:
-        print('Error occured!')
+        except Exception:
+            print('Error occured!')
+            break
 
 # Server wait for peer connect
 def thread_server(hostip, port, hostid):
