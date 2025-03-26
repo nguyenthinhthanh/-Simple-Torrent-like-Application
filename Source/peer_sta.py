@@ -62,6 +62,7 @@ MSG_NOT_INTERESTED = 3
 MSG_BITFIELD   = 5
 MSG_REQUEST = 6
 MSG_PIECE = 7
+MSG_END = 8  # Tin nhắn kết thúc giao tiếp
 
 # ===============================================================================================
 # ================ SERVER FUNCTION ==============================================================
@@ -802,7 +803,7 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id):
 
                 if piece_data is None:
                     print("Piece none data")
-                    return  # Không có dữ liệu để gửi
+                    return False  # Không có dữ liệu để gửi
                 # Lấy đoạn dữ liệu từ begin đến begin+req_block_length
                 # block_data = piece_data[begin:begin+req_block_length]
 
@@ -814,6 +815,10 @@ def handle_download_request_from_peer_client(client_socket, server_peer_id):
                 print(f"Đã gửi piece {piece_index} dữ liệu cho {client_peer_id}")
 
                 break
+            elif msg_id == MSG_END:
+                # In log để debug
+                print("Client đã gửi End message.")
+                return False
             else:
                 raise Exception("Message không được xử lý: không phải Interested hoặc Request")
             
@@ -975,6 +980,44 @@ downloaded_pieces = {}  # {piece_index: bytes}
 request_queue = set()   # Tập các piece đang được yêu cầu
 lock = threading.Lock() # Để đồng bộ truy cập dữ liệu chia sẻ
 
+# --- PHẦN PEER THREAD PEER: GỬI STOP MESSAGE ---
+def stop_peer_to_peer_communicate(client_socket, info_hash, client_peer_id):
+    """
+    Peer client yêu cầu dừng giao tiếp với peer server
+    
+    Các tham số:
+      - client_socket: socket giao tiếp giữa peer client và peer server
+      - info_hash: 20-byte SHA1 hash của torrent (bytes).
+      - client_peer_id: 20-byte định danh của peer client (bytes).
+    """
+
+    # Tạo socket TCP và kết nối tới peer
+    # s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # s.settimeout(TIMEOUT)
+    # s.connect((peer_ip, peer_port))
+
+    try:
+        # --- Step 1: Handshake ---
+        # handshake = <pstrlen><pstr><reserved><info_hash><peer_id>
+        handshake = struct.pack("!B", PSTRLEN) + PSTR.encode() + RESERVED + info_hash + client_peer_id
+        client_socket.sendall(handshake)
+        handshake_resp = client_socket.recv(HANDSHAKE_LEN)
+        if len(handshake_resp) < HANDSHAKE_LEN:
+            client_socket.close()
+            raise Exception("Handshake không thành công: không nhận đủ dữ liệu")
+        # Kiểm tra info_hash trong handshake (nằm sau pstrlen+pstr+reserved)
+        offset = 1 + PSTRLEN + 8
+        if handshake_resp[offset:offset+20] != info_hash:
+            client_socket.close()
+            raise Exception("Info hash không khớp trong handshake")
+
+        # --- Step 2: Gửi End message để kết thúc giao tiếp ---
+        end_msg = struct.pack("!IB", 1, MSG_END)
+        client_socket.sendall(end_msg)
+    except Exception as e:
+        client_socket.close()
+        raise Exception("Lỗi khi tải piece từ peer: " + str(e))
+
 # thread download for download file function
 def download_worker(peer_server, peer_client_id, info_hash_file, total_piece_file):
         # Tạo socket TCP và kết nối tới peer
@@ -990,6 +1033,7 @@ def download_worker(peer_server, peer_client_id, info_hash_file, total_piece_fil
                 remaining_pieces = piece_list - downloaded_pieces.keys() - request_queue
                 if not remaining_pieces:
                     print(f"Peer {peer_client_id} không còn piece khả dụng để tải.")
+                    stop_peer_to_peer_communicate(peer_to_peer_s,info_hash_file,peer_client_id)
                     break
 
                 # Chọn một piece để tải
