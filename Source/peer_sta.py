@@ -1062,6 +1062,10 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
     for peer in peer_list_info_hash:
         print(f"Peer ID: {peer['peer_id']}, IP: {peer['ip']}, Port: {peer['port']}")
 
+    if not peer_list_info_hash:
+        print(f"File {file_name} không còn được chia sẻ trong mạng")
+        return None
+
     # 3. Peer multi kết nối với peer khác trong danh sách và yêu cầu lấy danh sách những piece nó có
     threads = []
     # Khởi chạy worker cho từng peer trong danh sách (loại bỏ chính peer của mình)
