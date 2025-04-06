@@ -138,6 +138,36 @@ def handle_peer_request(conn, addr):
                 f"{response_body}"
             )
             conn.sendall(response.encode())
+
+        elif event == "updated":
+            # Kiểm tra các tham số bắt buộc
+            required_params = ["magnet", "peer_id", "port", "uploaded", "downloaded", "left", "event"]
+            if not all(param in params for param in required_params):
+                response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
+                conn.sendall(response.encode())
+                #conn.close()
+                return False
+
+            # Lấy giá trị từ query
+            magnet_list = params["magnet"]
+            peer_id = params["peer_id"][0]
+            port = params["port"][0]
+            uploaded = params["uploaded"][0]
+            downloaded = params["downloaded"][0]
+            left = params["left"][0]
+
+            # In thông tin cập nhật
+            print(f"Peer {peer_id} at {addr[0]}:{port} updated status:")
+            print(f"  Uploaded: {uploaded} bytes")
+            print(f"  Downloaded: {downloaded} bytes")
+            print(f"  Left: {left} bytes")
+            print(f"====================================================================")
+
+            # Gửi phản hồi HTTP
+            response_body = "Status updated successfully"
+            response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(response_body)}\r\n\r\n{response_body}"
+            conn.sendall(response.encode())
+
         elif event == "completed":
             pass
         elif event == "stopped":

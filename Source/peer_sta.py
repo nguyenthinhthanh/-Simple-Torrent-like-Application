@@ -185,7 +185,9 @@ def thread_client(id, serverip, serverport, peerip, peerport):
         elif command == "5":
             download_file(client_socket,serverip,serverport,id)
         elif command == "6":
-            sys.exit()
+            print("Exiting program...")
+            client_socket.close()  # Đóng kết nối socket
+            os._exit(0)  # Thoát chương trình ngay lập tức
         else:
             print('Error function number, try again')
             print_gui()
@@ -486,6 +488,59 @@ def get_list_shared_files(client_socket, tracker_host, tracker_port, peer_id):
 # ===============================================================================================
 # ============== HELPER FUNCTION FOR FUNCTION 5 =================================================
 # ===============================================================================================
+
+def update_download_status(client_socket, tracker_host, tracker_port, peer_id, uploaded, downloaded, left, magnet, port):
+    """
+    Gửi thông tin cập nhật trạng thái tải lên Tracker bằng HTTP GET.
+    """
+    magnet_params = "&".join([f"magnet={urllib.parse.quote(m)}" for m in magnet])
+    query = f"{magnet_params}&peer_id={peer_id}&port={port}&uploaded={uploaded}&downloaded={downloaded}&left={left}&event=updated"
+    request = f"GET /announce?{query} HTTP/1.1\r\nHost: {tracker_host}\r\nConnection: close\r\n\r\n"
+
+    # Gửi request đến Tracker qua socket
+    client_socket.sendall(request.encode())
+
+    # Nhận phản hồi từ Tracker
+    response = client_socket.recv(4096).decode()
+    print(f"Phản hồi từ Tracker (cập nhật):\n{response}")
+
+def update_download_status_thread(client_socket, tracker_host, tracker_port, peer_id, total_size, magnet, port, stop_event):
+    """
+    Luồng chạy song song để cập nhật trạng thái tải lên tracker mỗi 1 giây.
+    """
+    downloaded = 0
+    uploaded = 0  # Giả sử không upload gì cả
+    left = total_size
+    prev_downloaded = -1  # Lưu trạng thái trước đó để kiểm tra thay đổi
+
+    while not stop_event.is_set():  # Dừng khi stop_event được kích hoạt
+        with lock:  # Đồng bộ hóa với các luồng tải xuống
+            downloaded = sum(len(piece) for piece in downloaded_pieces.values())
+            left = max(0, total_size - downloaded)
+
+        # Chỉ gửi cập nhật nếu trạng thái thay đổi
+        if downloaded != prev_downloaded:
+            try:
+                update_download_status(client_socket, tracker_host, tracker_port, peer_id, uploaded, downloaded, left, magnet, port)
+                prev_downloaded = downloaded  # Cập nhật trạng thái trước đó
+            except Exception as e:
+                print(f"Lỗi khi cập nhật trạng thái tải xuống: {e}")
+                time.sleep(1)  # Retry sau 1 giây
+                continue
+
+        # Chờ 1 giây trước khi gửi cập nhật tiếp theo
+        stop_event.wait(1)
+
+    # Khi dừng luồng, tính toán lại và gửi thông điệp cuối cùng
+    with lock:
+        downloaded = sum(len(piece) for piece in downloaded_pieces.values())
+        left = max(0, total_size - downloaded)
+
+    print(f"Luồng cập nhật trạng thái tải xuống đã dừng. Downloaded: {downloaded}, Left: {left}")
+    try:
+        update_download_status(client_socket, tracker_host, tracker_port, peer_id, uploaded, downloaded, left, magnet, port)
+    except Exception as e:
+        print(f"Lỗi khi gửi thông điệp cuối cùng: {e}")
 
 #  --- Hàm phân tích respone peer list từ tracker ---
 def extract_filtered_peers(response_body):
@@ -1114,6 +1169,12 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
         print(f"File {file_name} không còn được chia sẻ trong mạng")
         return None
 
+    # Khởi tạo luồng cập nhật trạng thái tải
+    stop_event = threading.Event()  # Sự kiện để dừng luồng cập nhật
+    update_thread = threading.Thread(target=update_download_status_thread,
+                                      args=(client_socket, tracker_host, tracker_port, self_peer_id, file_size, [magnet_link], peerport, stop_event))
+    update_thread.start()
+
     # 3. Peer multi kết nối với peer khác trong danh sách và yêu cầu lấy danh sách những piece nó có
     threads = []
     # Khởi chạy worker cho từng peer trong danh sách (loại bỏ chính peer của mình)
@@ -1130,9 +1191,13 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
 
     if len(downloaded_pieces) < total_pieces:
         print("Tải file không thành công: chưa đủ pieces.")
+        stop_event.set()  # Dừng luồng cập nhật trạng thái
+        update_thread.join()
         return None
     else:
         print(f"Tải file {file_name} thành công")
+        stop_event.set()  # Dừng luồng cập nhật trạng thái
+        update_thread.join()
 
     # 5. Ghép file hoàn chỉnh && # 6. Xuất file
     export_dir = "data/export_files"
@@ -1152,6 +1217,7 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
     downloaded_pieces.clear()  # Xóa toàn bộ dữ liệu đã tải
     request_queue.clear()      # Xóa toàn bộ các yêu cầu piece
 
+    
 
 # ===============================================================================================
 # =========================== UX/UI =============================================================
