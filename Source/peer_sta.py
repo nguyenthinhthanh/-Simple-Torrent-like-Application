@@ -166,33 +166,35 @@ def thread_client(id, serverip, serverport, peerip, peerport):
 
 
     print('Client ID {} connect success to {}:{}'.format(id, serverip, serverport))
-
-    while True:
-        print_gui()
-        command = input("")
-
-        if command == "1":
-            upload_file_to_local()
-        elif command == "2":
-            #info_hash = get_list_info_hash
-            register_with_tracker(client_socket,serverip,serverport,magnet_list,id,peerport)
-        elif command == "3":
-            get_list_shared_files(client_socket,serverip,serverport,id)
-        elif command == "4":
-            # Just for testing
-            info_hash_test = "60194213e559cd3409ef8fcb57ed37592e472819"
-            get_peer_list(client_socket,serverip,serverport,id,info_hash_test)
-        elif command == "5":
-            download_file(client_socket,serverip,serverport,id)
-        elif command == "6":
-            print("Exiting program...")
-            client_socket.close()  # Đóng kết nối socket
-            os._exit(0)  # Thoát chương trình ngay lập tức
-        else:
-            print('Error function number, try again')
+    try:
+        while True:
             print_gui()
-            continue
+            command = input("")
 
+            if command == "1":
+                upload_file_to_local()
+            elif command == "2":
+                #info_hash = get_list_info_hash
+                register_with_tracker(client_socket,serverip,serverport,magnet_list,id,peerport)
+            elif command == "3":
+                get_list_shared_files(client_socket,serverip,serverport,id)
+            elif command == "4":
+                # Just for testing
+                info_hash_test = "60194213e559cd3409ef8fcb57ed37592e472819"
+                get_peer_list(client_socket,serverip,serverport,id,info_hash_test)
+            elif command == "5":
+                download_file(client_socket,serverip,serverport,id)
+            elif command == "6":
+                print("Exiting program...")
+                client_socket.close()  # Đóng kết nối socket
+                os._exit(0)  # Thoát chương trình ngay lập tức
+            else:
+                print('Error function number, try again')
+                print_gui()
+                continue
+    except KeyboardInterrupt:
+        print("Exiting program...")
+        handle_shutdown(client_socket, id, peerport)
 
 # ===============================================================================================
 # ================ AGENCY FUNCTION ==============================================================
@@ -483,6 +485,90 @@ def get_list_shared_files(client_socket, tracker_host, tracker_port, peer_id):
     # Nhận phản hồi từ Tracker
     response = client_socket.recv(4096).decode()
     print(f"Phản hồi từ Tracker:\n{response}")
+
+def share_downloaded_file(info_hash, file_name, file_size, downloaded_pieces):
+    """
+    Tự động chia sẻ file vừa tải xong.
+    """
+    # Lưu thông tin file
+    piece_count = len(downloaded_pieces)
+    file_info = {
+        "info_hash": info_hash,
+        "name": file_name,
+        "size": file_size,
+        "piece_count": piece_count,
+    }
+    save_file_info(file_info)
+
+    # Lưu từng piece vào thư mục pieces_data
+    for i, piece_data in enumerate(downloaded_pieces):
+        if not isinstance(piece_data, bytes):
+            piece_data = bytes(piece_data)  # Chuyển đổi sang bytes nếu cần
+        piece_name = f"{info_hash}_{i}"
+        save_piece_data(piece_name, piece_data)
+
+    print(f"File '{file_name}' đã được chia sẻ thành công!")
+    print_file_info(file_info)
+    
+def update_tracker(client_socket, info_hash, peer_id, port, event, file_name, file_size, downloaded_pieces, tracker_host, magnet):
+    """
+    Gửi trạng thái của Peer lên Tracker và tự động chia sẻ file vừa tải xong.
+    """
+    if event not in ["started", "completed", "stopped"]:
+        print(f"Lỗi: Event '{event}' không hợp lệ!")
+        return
+
+    if TRACKER_ADDRESS is None:
+        print("Lỗi: Tracker address chưa được cấu hình.")
+        return
+
+    # Xây dựng query request
+    uploaded = len(downloaded_pieces)  # Số lượng pieces đã upload
+    downloaded = file_size            # Tổng số byte đã tải xuống
+    left = 0                          # Không còn dữ liệu cần tải
+
+
+    # Xây dựng query thủ công
+    magnet_params = "&".join([f"magnet={urllib.parse.quote(m)}" for m in magnet])
+    query = f"{magnet_params}&peer_id={peer_id}&port={port}&event={event}&uploaded={uploaded}&downloaded={downloaded}&left={left}&info_hash={info_hash}"
+
+    print(f"[Tracker Update] Gửi trạng thái '{event}' đến Tracker: {TRACKER_ADDRESS}")
+
+    try:
+        # Kiểm tra nếu socket chưa được kết nối
+        if client_socket.fileno() == -1:
+            raise Exception("Socket chưa được kết nối.")
+
+        # Gửi yêu cầu HTTP GET đến tracker
+        request = f"GET /announce?{query} HTTP/1.1\r\nHost: {tracker_host}\r\nConnection: close\r\n\r\n"
+        client_socket.sendall(request.encode())
+
+        # Nhận phản hồi từ tracker
+        response = client_socket.recv(4096).decode()
+        print(f"Phản hồi từ Tracker:\n{response}")
+
+        # Kiểm tra phản hồi từ tracker
+        if "200 OK" not in response:
+            print(f"Lỗi: Tracker trả về phản hồi không hợp lệ:\n{response}")
+            return
+
+        # Tự động chia sẻ file vừa tải xong
+        if event == "completed":
+            print(f"Tự động chia sẻ file '{file_name}'...")
+            share_downloaded_file(info_hash, file_name, file_size, downloaded_pieces)
+
+    except Exception as e:
+        print(f"Lỗi khi gửi '{event}' đến tracker: {e}")
+        print(f"TRACKER_ADDRESS: {TRACKER_ADDRESS}")
+
+# ===============================================================================================
+# ================================ SHUTDOWN HANDLER =============================================
+# ===============================================================================================
+
+def handle_shutdown(client_socket, peer_id, peer_port):
+    print("Shutting down peer...")
+    update_tracker(client_socket, None, peer_id, peer_port, "stopped", None, 0, [], TRACKER_ADDRESS, [])
+    sys.exit()
         
 
 # ===============================================================================================
@@ -576,6 +662,8 @@ def get_peer_list(client_socket, tracker_host, tracker_port, peer_id, info_hash)
       - info_hash: chuỗi (hoặc hash) định danh file (torrent) cần tìm các peer
       - event=get_peer_list: báo hiệu muốn lấy danh sách peer (để tracker trả về danh sách peer)
     """
+    print(f"Gửi yêu cầu lấy danh sách peer từ tracker {tracker_host}:{tracker_port}")
+    print(f"Peer ID: {peer_id}, Info Hash: {info_hash}")
     # Xây dựng URL query
     query = f"peer_id={peer_id}&info_hash={info_hash}&event=get_peer_list"
     request = (
@@ -1136,7 +1224,12 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
         - self_peer_id: id của peer yêu cầu tải file
         - self_peer_port: port của peer yêu cầu tải file
     """
+    print(f"Bắt đầu tải file từ tracker {tracker_host}:{tracker_port}")
+    print(f"Peer ID: {self_peer_id}")
 
+    # Log khi bắt đầu tải từng piece
+    for i, piece in enumerate(downloaded_pieces):
+        print(f"Tải piece {i + 1}/{total_pieces}")
     # 1. Người dùng nhập vào magnet link để tải file
     magnet_link = input("Enter magnet link of file want to download: ").strip()
 
@@ -1212,6 +1305,8 @@ def download_file(client_socket, tracker_host, tracker_port, self_peer_id):
             output_file.write(downloaded_pieces[i])
 
     # 7. Seeder
+    update_tracker(client_socket, info_hash, self_peer_id, peerport, "completed", file_name, file_size, downloaded_pieces, tracker_host, [magnet_link])   # Gửi cập nhật trạng thái completed sau khi file đã được ghi xong                                                                             # Sau đó thêm file vào hệ thống chia sẻ
+    register_with_tracker(client_socket, tracker_host, tracker_port, [magnet_link], self_peer_id, peerport)  # Cuối cùng, đăng ký lại với tracker để xác nhận làm seeder
 
     # 8. Clear
     downloaded_pieces.clear()  # Xóa toàn bộ dữ liệu đã tải

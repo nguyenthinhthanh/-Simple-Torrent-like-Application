@@ -60,6 +60,7 @@ online_file = []
 # Tạo set để lưu trữ các phần tử đã tồn tại
 # existing_entries = set((entry["display_name"], entry["magnet"]) for entry in online_file)
 
+
 def handle_peer_request(conn, addr):
     """
     Xử lý yêu cầu HTTP từ Peer
@@ -70,7 +71,14 @@ def handle_peer_request(conn, addr):
 
         # Lấy dòng đầu tiên của request (HTTP request line)
         request_line = request.split("\r\n")[0]
+        if not request_line or len(request_line.split()) < 3:
+            print(f"Lỗi: Request không hợp lệ từ {addr}")
+            response = "HTTP/1.1 400 Bad Request\r\n\r\nInvalid Request"
+            conn.sendall(response.encode())
+            return False
+        
         method, path, _ = request_line.split()
+        print(f"Request line: {request_line}")
 
         # Kiểm tra phương thức HTTP
         if method != "GET":
@@ -82,14 +90,27 @@ def handle_peer_request(conn, addr):
         # Phân tích URL để lấy tham số query
         parsed_url = urlparse(path)
         params = parse_qs(parsed_url.query)
+        print(f"Params: {params}")
+        
 
         # Kiểm tra event để xử lý tương ứng : started, stopped, completed, list
-        event = params["event"][0]
+        event = params.get("event", [None])[0]
+        if not event:
+            print(f"Lỗi: Thiếu tham số 'event' trong request từ {addr}")
+            response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing 'event' parameter"
+            conn.sendall(response.encode())
+            return False
+        
+        print(f"Event: {event}")        
 
         if event == "started":
+            print(f"Xử lý sự kiện 'started' từ {addr}")
+            print(f"Params nhận được: {params}")
+
             # Kiểm tra các tham số bắt buộc
             required_params = ["magnet", "peer_id", "port", "uploaded", "downloaded", "left", "event"]
             if not all(param in params for param in required_params):
+                print(f"Lỗi: Thiếu tham số bắt buộc trong sự kiện 'started'")
                 response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
                 conn.sendall(response.encode())
                 #conn.close()
@@ -100,6 +121,7 @@ def handle_peer_request(conn, addr):
             peer_id = params["peer_id"][0]
             port = params["port"][0]
             #event = params["event"][0]
+            print(f"Peer {peer_id} đã gửi yêu cầu 'started' trên cổng {port}")
 
             # Trích xuất info_hash từ mỗi magnet link
             info_hash_list = []
@@ -169,10 +191,131 @@ def handle_peer_request(conn, addr):
             conn.sendall(response.encode())
 
         elif event == "completed":
-            pass
-        elif event == "stopped":
-            pass
+            print(f"Xử lý sự kiện 'completed' từ {addr}")
+
+            # Kiểm tra các tham số bắt buộc
+            required_params = ["magnet", "peer_id", "port", "uploaded", "downloaded", "left", "event"]
+            if not all(param in params for param in required_params):
+                print(f"Lỗi: Thiếu tham số bắt buộc trong sự kiện 'completed'")
+                response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
+                conn.sendall(response.encode())
+                return False
+
+            # Lấy giá trị từ query
+            magnet_list = params["magnet"]
+            peer_id = params["peer_id"][0]
+            port = params["port"][0]
+            uploaded = params["uploaded"][0]
+            downloaded = params["downloaded"][0]
+            left = params["left"][0]
+
+            # In thông tin hoàn thành
+            print(f"Peer {peer_id} tại {addr[0]}:{port} đã hoàn thành tải file:")
+            print(f"  Uploaded: {uploaded} bytes")
+            print(f"  Downloaded: {downloaded} bytes")
+            print(f"  Left: {left} bytes")
+            print(f"====================================================================")
+
+            # Kiểm tra xem peer đã tồn tại trong danh sách `peer_list` chưa
+            peer_exists = False
+            for peer in peer_list:
+                if peer["peer_id"] == peer_id and peer["port"] == port and peer["ip"] == addr[0]:
+                    peer_exists = True
+                    break
+
+            # Nếu peer đã tồn tại, đánh dấu là Seeder
+            if peer_exists:
+                print(f"Peer {peer_id} đã tồn tại trong danh sách và được đánh dấu là Seeder.")
+            else:
+                # Nếu peer chưa có trong danh sách, thêm mới với trạng thái Seeder
+                peer_list.append({
+                    "peer_id": peer_id,
+                    "port": port,
+                    "ip": addr[0],
+                    "info_hash": [],
+                    "magnet": magnet_list
+                })
+                print(f"Peer {peer_id} đã được thêm vào danh sách với trạng thái Seeder.")
+
+            # Cập nhật `online_file`: nếu file chưa có trong danh sách, thêm vào
+            for magnet in magnet_list:
+                info_hash, display_name, tracker_url, file_size = parse_magnet_uri(magnet)
+                new_entry = {"display_name": display_name, "magnet": magnet}
+                if new_entry not in online_file:
+                    online_file.append(new_entry)
+                    print(f"File '{display_name}' đã được thêm vào danh sách online_file.")
+                else:
+                    print(f"File '{display_name}' đã tồn tại trong danh sách online_file.")
+
+            # Gửi phản hồi HTTP
+            response_body = "Peer marked as seeder successfully"
+            response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(response_body)}\r\n\r\n{response_body}"
+            conn.sendall(response.encode())
+            
+        elif event == "completed":
+            print(f"Xử lý sự kiện 'completed' từ {addr}")
+
+            # Kiểm tra các tham số bắt buộc
+            required_params = ["magnet", "peer_id", "port", "uploaded", "downloaded", "left", "event"]
+            if not all(param in params for param in required_params):
+                print(f"Lỗi: Thiếu tham số bắt buộc trong sự kiện 'completed'")
+                response = "HTTP/1.1 400 Bad Request\r\n\r\nMissing required parameters"
+                conn.sendall(response.encode())
+                return False
+
+            # Lấy giá trị từ query
+            magnet_list = params["magnet"]
+            peer_id = params["peer_id"][0]
+            port = params["port"][0]
+            uploaded = params["uploaded"][0]
+            downloaded = params["downloaded"][0]
+            left = params["left"][0]
+
+            # In thông tin hoàn thành
+            print(f"Peer {peer_id} tại {addr[0]}:{port} đã hoàn thành tải file:")
+            print(f"  Uploaded: {uploaded} bytes")
+            print(f"  Downloaded: {downloaded} bytes")
+            print(f"  Left: {left} bytes")
+            print(f"====================================================================")
+
+            # Kiểm tra xem peer đã tồn tại trong danh sách `peer_list` chưa
+            peer_exists = False
+            for peer in peer_list:
+                if peer["peer_id"] == peer_id and peer["port"] == port and peer["ip"] == addr[0]:
+                    peer_exists = True
+                    break
+
+            # Nếu peer đã tồn tại, đánh dấu là Seeder
+            if peer_exists:
+                print(f"Peer {peer_id} đã tồn tại trong danh sách và được đánh dấu là Seeder.")
+            else:
+                # Nếu peer chưa có trong danh sách, thêm mới với trạng thái Seeder
+                peer_list.append({
+                    "peer_id": peer_id,
+                    "port": port,
+                    "ip": addr[0],
+                    "info_hash": [],
+                    "magnet": magnet_list
+                })
+                print(f"Peer {peer_id} đã được thêm vào danh sách với trạng thái Seeder.")
+
+            # Cập nhật `online_file`: nếu file chưa có trong danh sách, thêm vào
+            for magnet in magnet_list:
+                info_hash, display_name, tracker_url, file_size = parse_magnet_uri(magnet)
+                new_entry = {"display_name": display_name, "magnet": magnet}
+                if new_entry not in online_file:
+                    online_file.append(new_entry)
+                    print(f"File '{display_name}' đã được thêm vào danh sách online_file.")
+                else:
+                    print(f"File '{display_name}' đã tồn tại trong danh sách online_file.")
+
+            # Gửi phản hồi HTTP
+            response_body = "Peer marked as seeder successfully"
+            response = f"HTTP/1.1 200 OK\r\nContent-Length: {len(response_body)}\r\n\r\n{response_body}"
+            conn.sendall(response.encode())
+
         elif event == "list":
+
             # Kiểm tra các tham số bắt buộc
             required_params = ["peer_id","event"]
             if not all(param in params for param in required_params):
@@ -180,7 +323,7 @@ def handle_peer_request(conn, addr):
                 conn.sendall(response.encode())
                 #conn.close()
                 return False
-            
+            # return handle_event_list(conn, addr, params)
             peer_id = params["peer_id"][0]
 
             # Gửi phản hồi HTTP
@@ -204,6 +347,7 @@ def handle_peer_request(conn, addr):
             )
             conn.sendall(response.encode())
         elif event == "get_peer_list":
+            # return handle_event_get_peer_list(conn, addr, params)
             # Kiểm tra các tham số bắt buộc
             required_params = ["peer_id","info_hash","event"]
             if not all(param in params for param in required_params):
@@ -261,6 +405,9 @@ def handle_peer_request(conn, addr):
     
     except Exception as e:
         print(f"Lỗi xử lý peer {addr}: {e}")
+        print(f"Request từ peer: {request}")  # Log toàn bộ request để kiểm tra
+        response = "HTTP/1.1 500 Internal Server Error\r\n\r\nServer Error"
+        conn.sendall(response.encode())
         return False
     
     # finally:
